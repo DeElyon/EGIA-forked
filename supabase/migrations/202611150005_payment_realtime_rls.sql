@@ -39,17 +39,27 @@ AS $$
     EXISTS (
       SELECT 1
       FROM public.student AS learner
-      LEFT JOIN public.parent AS guardian ON guardian.id = learner.parentid
+      LEFT JOIN public.parent AS guardian
+        ON guardian.id = learner.parentid
+        AND guardian.schoolid = learner.schoolid
       WHERE learner.id = target_student_id
+        AND learner.schoolid = target_school_id
+        AND (target_parent_id IS NULL OR learner.parentid = target_parent_id)
         AND (
           learner.userid = auth.uid()::text
           OR guardian.userid = auth.uid()::text
         )
     )
     OR EXISTS (
-      SELECT 1 FROM public.parent AS linked_parent
+      SELECT 1
+      FROM public.parent AS linked_parent
+      JOIN public.student AS linked_student
+        ON linked_student.parentid = linked_parent.id
+        AND linked_student.schoolid = linked_parent.schoolid
       WHERE linked_parent.id = target_parent_id
         AND linked_parent.userid = auth.uid()::text
+        AND linked_student.id = target_student_id
+        AND linked_student.schoolid = target_school_id
     )
     OR public.can_realtime_manage_school_id(target_school_id);
 $$;

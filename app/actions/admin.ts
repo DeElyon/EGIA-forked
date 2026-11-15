@@ -25,7 +25,7 @@ import { randomUUID } from 'crypto'
 import { generateAdmissionNumber, isValidAdmissionNumber, generateStaffId } from '@/lib/id'
 import { studentEnrollmentSchema } from '@/lib/validators/student.schema'
 import { initializePaystackPayment } from '@/lib/payments/service'
-import { notifyPaymentConfirmed } from '@/lib/payments/notifications'
+import { notifyPaymentStatus } from '@/lib/payments/notifications'
 
 const STUDENT_REGISTRATION_FEE = 2000
 const PAYSTACK_GATEWAY_FEE = 161.25
@@ -281,7 +281,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
     revalidatePath('/dashboard/admin/finance/fees/pending')
     return result[0]
   })
-  if (status === 'success') await notifyPaymentConfirmed(updatedPayment.id)
+  await notifyPaymentStatus(updatedPayment.id, status)
   return updatedPayment
 }
 

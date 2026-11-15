@@ -42,6 +42,15 @@ async function requireSchoolAdminScope(requestedSchoolId?: string) {
   return user.schoolId
 }
 
+async function requirePaymentAdminScope(action: 'read' | 'update') {
+  const schoolId = await requireSchoolAdminScope()
+  const user = (await auth.getSession())?.user
+  if (user?.role === 'SCHOOL_ADMIN' && !canSchoolAdminAccess(user.adminLevel, action, 'payment')) {
+    throw new Error('Your school administrator role does not have permission to manage payments.')
+  }
+  return schoolId
+}
+
 // ===== SUPPORT TICKETS ACTIONS =====
 export async function getAdminSupportTickets() {
   const schoolId = await requireSchoolAdminScope()
@@ -223,38 +232,54 @@ export async function resolveDisciplinaryRecord(recordId: string, notes: string)
 
 // ===== ADMIN UPDATE USER WALLET & OVERVIEW AMOUNTS =====
 export async function updateParentOutstandingFee(parentId: string, amount: string) {
-  await requireAdmin()
-  const num = parseFloat(amount)
-  if (isNaN(num) || num < 0) throw new Error('Please enter a valid amount.')
+  const schoolId = await requirePaymentAdminScope('update')
+  const targetParent = await db.query.parent.findFirst({
+    where: schoolId
+      ? and(eq(parentTable.id, parentId), eq(parentTable.schoolId, schoolId))
+      : eq(parentTable.id, parentId),
+  })
+  if (!targetParent?.schoolId) throw new Error('Parent account was not found in an active school.')
+  const targetSchoolId = targetParent.schoolId
 
-  // Check if parent has any child
+  const num = parseFloat(amount)
+  if (!Number.isFinite(num) || num < 0) throw new Error('Please enter a valid amount.')
+
   const children = await db.query.student.findMany({
-    where: eq(student.parentId, parentId)
+    where: and(
+      eq(student.parentId, targetParent.id),
+      eq(student.schoolId, targetSchoolId),
+    ),
   })
 
   if (children.length === 0) throw new Error('This parent does not have any linked wards to assign fees to.')
 
-  // Create a pending fee record for the first linked ward
   const studentId = children[0].id
   const reference = `FEE-UPDATE-${Date.now()}-${randomUUID().slice(0, 8)}`
 
-  // Deactivate any existing pending fees and insert a new one representing their balance
-  await db.update(payment)
-    .set({ status: 'failed', updatedAt: new Date() })
-    .where(and(eq(payment.parentId, parentId), eq(payment.status, 'pending')))
+  await db.transaction(async (tx) => {
+    await tx.update(payment)
+      .set({ status: 'failed', updatedAt: new Date() })
+      .where(and(
+        eq(payment.parentId, targetParent.id),
+        eq(payment.schoolId, targetSchoolId),
+        eq(payment.status, 'pending'),
+        eq(payment.paymentMethod, 'ADMIN'),
+      ))
 
-  await db.insert(payment).values({
-    id: randomUUID(),
-    studentId,
-    parentId,
-    amount: num.toFixed(2),
-    feeType: 'tuition',
-    paymentMethod: 'ADMIN',
-    transactionReference: reference,
-    status: 'pending',
-    description: 'Updated fee obligation set by school administration.',
-    createdAt: new Date(),
-    updatedAt: new Date()
+    await tx.insert(payment).values({
+      id: randomUUID(),
+      schoolId: targetSchoolId,
+      studentId,
+      parentId: targetParent.id,
+      amount: num.toFixed(2),
+      feeType: 'tuition',
+      paymentMethod: 'ADMIN',
+      transactionReference: reference,
+      status: 'pending',
+      description: 'Updated fee obligation set by school administration.',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    })
   })
 
   revalidatePath('/dashboard/parent/overview')
@@ -263,11 +288,14 @@ export async function updateParentOutstandingFee(parentId: string, amount: strin
 }
 
 export async function getParentsWithPendingFees() {
-  await requireAdmin()
-  const parentsList = await db.select().from(parentTable)
+  const schoolId = await requirePaymentAdminScope('read')
+  const parentsList = schoolId
+    ? await db.select().from(parentTable).where(eq(parentTable.schoolId, schoolId))
+    : await db.select().from(parentTable)
   const result: any[] = []
 
   for (const p of parentsList) {
+    if (!p.schoolId) continue
     const userRecord = await db.query.user.findFirst({
       where: eq(userTable.id, p.userId)
     })
@@ -276,6 +304,7 @@ export async function getParentsWithPendingFees() {
     const pendingPayments = await db.query.payment.findMany({
       where: and(
         eq(payment.parentId, p.id),
+        eq(payment.schoolId, p.schoolId),
         eq(payment.status, 'pending')
       )
     })

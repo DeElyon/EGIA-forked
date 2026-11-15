@@ -9,7 +9,7 @@ import {
 } from './paystack-security'
 import { checkOrAcquireIdempotency, completeIdempotencyKey, failIdempotencyKey } from '@/lib/idempotency'
 import { completeLearnAiPurchase } from '@/lib/learn-ai'
-import { notifyPaymentConfirmed } from '@/lib/payments/notifications'
+import { notifyPaymentConfirmed, notifyPaymentStatus } from '@/lib/payments/notifications'
 import { allocatePaymentAcrossInstallments } from '@/lib/payments/installments'
 
 export { validPaystackSignature, validatePaystackWebhook, paystackAmountMatches }
@@ -194,12 +194,12 @@ export async function initializePaystackPayment(params: InitializePaymentParams)
     checkoutUrl = paystackData.data.authorization_url
   } catch (error) {
     if (paymentRecord) {
-      await db.update(payment)
-        .set({ status: 'failed', updatedAt: new Date() })
-        .where(eq(payment.id, paymentRecord.id))
+      await markPaymentFailed(paymentRecord.id)
     }
     throw error
   }
+
+  if (paymentRecord) await notifyPaymentStatus(paymentRecord.id, 'processing')
 
   return {
     checkoutUrl,
@@ -691,7 +691,7 @@ export async function markPaymentSuccessful(paymentId: string, paystackRef?: str
 
 export async function markPaymentFailed(paymentId: string) {
   const now = new Date()
-  return db.transaction(async (tx) => {
+  const updatedPayment = await db.transaction(async (tx) => {
     const updated = await tx.update(payment)
         .set({ status: 'failed', updatedAt: now })
         .where(and(eq(payment.id, paymentId), eq(payment.status, 'pending')))
@@ -711,6 +711,8 @@ export async function markPaymentFailed(paymentId: string) {
     }
     return updated[0] || null
   })
+  if (updatedPayment) await notifyPaymentStatus(updatedPayment.id, 'failed')
+  return updatedPayment
 }
 
 export async function reconcilePayment(paymentId: string, adminUserId: string) {

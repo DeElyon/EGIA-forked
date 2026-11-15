@@ -12,7 +12,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseSecretKey, getSupabaseUrl } from '@/utils/supabase/config'
 import { canSchoolAdminAccess } from '@/lib/auth/school-admin-permissions'
 import { allocatePaymentAcrossInstallments, splitAmountIntoInstallments, createInstallmentDueDates, INSTALLMENTS_PER_TERM } from '@/lib/payments/installments'
-import { notifyPaymentConfirmed } from '@/lib/payments/notifications'
+import { notifyPaymentConfirmed, notifyPaymentStatus } from '@/lib/payments/notifications'
 import {
   initializePaystackPayment as serviceInitializePaystackPayment,
   verifyPaystackPayment as serviceVerifyPaystackPayment,
@@ -89,10 +89,35 @@ export async function getManualPaymentOptions() {
       orderBy: (record, { asc }) => [asc(record.feeType)],
     }),
   ])
+  const parentIds = [...new Set(students.map((record) => record.parentId).filter(
+    (id): id is string => Boolean(id),
+  ))]
+  const linkedParents = parentIds.length
+    ? await db.query.parent.findMany({
+      where: and(inArray(parentTable.id, parentIds), eq(parentTable.schoolId, schoolId)),
+    })
+    : []
+  const parentUsers = linkedParents.length
+    ? await db.query.user.findMany({
+      where: inArray(userTable.id, linkedParents.map((record) => record.userId)),
+    })
+    : []
+  const usersById = new Map(parentUsers.map((record) => [record.id, record]))
+  const parentsById = new Map(linkedParents.map((record) => [record.id, record]))
   return {
-    students: students.map(({ id, firstName, lastName, class: className, admissionNumber, department }) => ({
-      id, firstName, lastName, class: className, admissionNumber, department,
-    })),
+    students: students.map(({ id, firstName, lastName, class: className, admissionNumber, department, parentId }) => {
+      const linkedParent = parentId ? parentsById.get(parentId) : null
+      return {
+        id,
+        firstName,
+        lastName,
+        class: className,
+        admissionNumber,
+        department,
+        parentName: linkedParent ? `${linkedParent.firstName} ${linkedParent.lastName}`.trim() : null,
+        parentEmail: linkedParent ? usersById.get(linkedParent.userId)?.email || null : null,
+      }
+    }),
     fees: fees.map(({ id, class: className, department, feeType, amount }) => ({
       id, class: className, department, feeType, amount,
     })),
@@ -627,6 +652,7 @@ export async function submitManualPayment(data: { studentId: string; amount: str
     })
   })
 
+  await notifyPaymentStatus(paymentId, 'pending')
   revalidatePath('/dashboard/parent/payments/history')
   return { success: true, paymentId, uploadId }
 }
@@ -941,14 +967,35 @@ export async function rejectReceipt(uploadId: string, reason: string) {
   if (!upload) throw new Error('Receipt upload record not found')
   assertReceiptSchoolAccess(session.user, upload.schoolId)
 
-  await db.update(paymentReceiptUploads).set({
-    status: 'REJECTED',
-    rejectionReason: reason,
-    reviewedBy: session.user.id,
-    reviewedAt: now,
-    updatedAt: now,
-  }).where(and(eq(paymentReceiptUploads.id, uploadId), eq(paymentReceiptUploads.schoolId, upload.schoolId)))
+  const failedPaymentId = await db.transaction(async (tx) => {
+    const [rejectedUpload] = await tx.update(paymentReceiptUploads).set({
+      status: 'REJECTED',
+      rejectionReason: reason,
+      reviewedBy: session.user.id,
+      reviewedAt: now,
+      updatedAt: now,
+    }).where(and(
+      eq(paymentReceiptUploads.id, uploadId),
+      eq(paymentReceiptUploads.schoolId, upload.schoolId),
+      eq(paymentReceiptUploads.status, 'PENDING'),
+    )).returning({ paymentId: paymentReceiptUploads.paymentId })
+    if (!rejectedUpload) throw new Error('Only a pending receipt can be rejected.')
+    if (!rejectedUpload.paymentId) return null
 
+    const [failedPayment] = await tx.update(payment).set({
+      status: 'failed',
+      updatedAt: now,
+    }).where(and(
+      eq(payment.id, rejectedUpload.paymentId),
+      eq(payment.schoolId, upload.schoolId),
+      eq(payment.status, 'pending'),
+      notInArray(payment.paymentMethod, ['PAYSTACK', 'KORAPAY']),
+    )).returning({ id: payment.id })
+    if (!failedPayment) throw new Error('Receipt is not linked to a pending manual payment for this school.')
+    return failedPayment.id
+  })
+
+  if (failedPaymentId) await notifyPaymentStatus(failedPaymentId, 'failed')
   revalidatePath('/dashboard/admin/payments/pending-receipts')
   return { success: true }
 }

@@ -12,4 +12,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS payment_installment_term_plan_unique
   WHERE student_id IS NOT NULL AND term_id IS NOT NULL AND fee_type IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS payment_installment_parent_due_date_idx
-  ON public.payment_installment (parent_id, dueDate);
+  ON public.payment_installment (parent_id, "dueDate");

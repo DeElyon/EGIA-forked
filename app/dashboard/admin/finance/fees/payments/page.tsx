@@ -206,10 +206,18 @@ export default function AdminPaymentsPage() {
                       }} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3">
                         <option value="">Select a student</option>
                         {manualOptions.students.map((record) => (
-                          <option key={record.id} value={record.id}>{record.firstName} {record.lastName} · {record.class} · {record.admissionNumber}</option>
+                          <option key={record.id} value={record.id}>
+                            {record.firstName} {record.lastName} · {record.class} · {record.admissionNumber} · Parent: {record.parentName || 'Not linked'}{record.parentEmail ? ` (${record.parentEmail})` : ''}
+                          </option>
                         ))}
                       </select>
                     </label>
+                    {selectedManualStudent && (
+                      <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        Linked parent account: <span className="font-bold text-slate-800">{selectedManualStudent.parentName || 'No parent account linked'}</span>
+                        {selectedManualStudent.parentEmail && <span> · {selectedManualStudent.parentEmail}</span>}
+                      </p>
+                    )}
                     <label className="block space-y-1.5 text-sm font-bold text-slate-700">
                       Fee category
                       <select required value={manualFeeType} onChange={(event) => setManualFeeType(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3">
