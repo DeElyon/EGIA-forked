@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { dispute, disputeMessage, parent, student, supportTicket, supportTicketReply, user } from '@/lib/db/schema'
+import { dispute, disputeMessage, parent, payment, student, supportTicket, supportTicketReply, user } from '@/lib/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
@@ -20,15 +20,23 @@ function createTicketNumber(prefix: 'SUP' | 'DIS') {
 }
 
 async function isDisputeInAdministratorSchool(disputeRecord: typeof dispute.$inferSelect, administratorId: string) {
-  const [raiser, administrator, relatedStudent] = await Promise.all([
+  const [raiser, administrator, relatedStudent, relatedPayment] = await Promise.all([
     db.query.user.findFirst({ where: eq(user.id, disputeRecord.raisedById) }),
     db.query.user.findFirst({ where: eq(user.id, administratorId) }),
     disputeRecord.relatedStudentId
       ? db.query.student.findFirst({ where: eq(student.id, disputeRecord.relatedStudentId) })
       : Promise.resolve(null),
+    disputeRecord.relatedPaymentId
+      ? db.query.payment.findFirst({ where: eq(payment.id, disputeRecord.relatedPaymentId) })
+      : Promise.resolve(null),
   ])
-  const disputeSchoolId = relatedStudent?.schoolId || raiser?.schoolId
-  return Boolean(disputeSchoolId && disputeSchoolId === administrator?.schoolId)
+  const referencedSchoolIds = [raiser?.schoolId, relatedStudent?.schoolId, relatedPayment?.schoolId]
+    .filter((schoolId): schoolId is string => Boolean(schoolId))
+  return Boolean(
+    administrator?.schoolId &&
+    referencedSchoolIds.length > 0 &&
+    referencedSchoolIds.every((schoolId) => schoolId === administrator.schoolId),
+  )
 }
 
 export async function createDispute(data: {
@@ -45,24 +53,75 @@ export async function createDispute(data: {
   const description = requireText(data.description, 'Dispute description', 5000)
   const role = session.user.role.toUpperCase()
   let relatedStudentId: string | null = null
+  let actorSchoolId = session.user.schoolId || null
+  let parentProfile: Awaited<ReturnType<typeof db.query.parent.findFirst>> = null
+  let ownStudent: Awaited<ReturnType<typeof db.query.student.findFirst>> = null
 
   if (data.relatedStudentId) {
     const relatedStudent = await db.query.student.findFirst({
       where: eq(student.id, data.relatedStudentId),
     })
     if (!relatedStudent) throw new Error('The selected student was not found.')
-    if (['STUDENT', 'PUPIL'].includes(role) && relatedStudent.userId !== session.user.id) {
-      throw new Error('You can only raise a dispute for your own student account.')
-    }
-    if (role === 'PARENT') {
-      const parentProfile = await db.query.parent.findFirst({
-        where: eq(parent.userId, session.user.id),
+    if (['STUDENT', 'PUPIL'].includes(role)) {
+      ownStudent = await db.query.student.findFirst({
+        where: eq(student.userId, session.user.id),
       })
-      if (!parentProfile || relatedStudent.parentId !== parentProfile.id) {
-        throw new Error('You can only raise a dispute for a linked child.')
+      if (!ownStudent || relatedStudent.id !== ownStudent.id) {
+        throw new Error('You can only raise a dispute for your own student account.')
+      }
+      actorSchoolId = ownStudent.schoolId
+    } else if (role === 'PARENT') {
+      parentProfile = await db.query.parent.findFirst({ where: eq(parent.userId, session.user.id) })
+      if (!parentProfile || relatedStudent.parentId !== parentProfile.id ||
+        !parentProfile.schoolId || relatedStudent.schoolId !== parentProfile.schoolId) {
+        throw new Error('You can only raise a dispute for a linked student in your school.')
+      }
+      actorSchoolId = parentProfile.schoolId
+    } else if (role !== 'SUPER_ADMIN') {
+      if (!['TEACHER', 'ADMIN', 'SCHOOL_ADMIN'].includes(role) ||
+        !session.user.schoolId || relatedStudent.schoolId !== session.user.schoolId) {
+        throw new Error('You can only raise a dispute for a student in your school.')
       }
     }
     relatedStudentId = relatedStudent.id
+  }
+
+  let relatedPaymentId: string | null = null
+  if (data.relatedPaymentId) {
+    const relatedPayment = await db.query.payment.findFirst({
+      where: eq(payment.id, data.relatedPaymentId),
+    })
+    if (!relatedPayment || !relatedPayment.schoolId) throw new Error('The selected payment was not found in an active school.')
+    if (role !== 'SUPER_ADMIN' && (!actorSchoolId || relatedPayment.schoolId !== actorSchoolId)) {
+      throw new Error('You can only raise a dispute about a payment from your school.')
+    }
+    if (role === 'PARENT') {
+      parentProfile ||= await db.query.parent.findFirst({ where: eq(parent.userId, session.user.id) })
+      if (!parentProfile || relatedPayment.parentId !== parentProfile.id) {
+        throw new Error('You can only raise a dispute about a payment linked to your parent account.')
+      }
+    } else if (['STUDENT', 'PUPIL'].includes(role)) {
+      ownStudent ||= await db.query.student.findFirst({ where: eq(student.userId, session.user.id) })
+      if (!ownStudent || relatedPayment.studentId !== ownStudent.id) {
+        throw new Error('You can only raise a dispute about your own student payment.')
+      }
+    } else if (role !== 'SUPER_ADMIN' && !['TEACHER', 'ADMIN', 'SCHOOL_ADMIN'].includes(role)) {
+      throw new Error('Your account cannot raise a dispute about this payment.')
+    }
+    if (relatedStudentId && relatedPayment.studentId && relatedPayment.studentId !== relatedStudentId) {
+      throw new Error('The selected student and payment do not match.')
+    }
+    if (!relatedStudentId && relatedPayment.studentId) {
+      const paymentStudent = await db.query.student.findFirst({
+        where: and(
+          eq(student.id, relatedPayment.studentId),
+          eq(student.schoolId, relatedPayment.schoolId),
+        ),
+      })
+      if (!paymentStudent) throw new Error('The payment’s student does not belong to its school.')
+      relatedStudentId = paymentStudent.id
+    }
+    relatedPaymentId = relatedPayment.id
   }
 
   const [created] = await db.insert(dispute).values({
@@ -76,7 +135,7 @@ export async function createDispute(data: {
     description,
     raisedById: session.user.id,
     relatedStudentId,
-    relatedPaymentId: data.relatedPaymentId || null,
+    relatedPaymentId,
     status: 'OPEN',
   }).returning()
 

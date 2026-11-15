@@ -90,6 +90,7 @@ export const userRole = pgTable('user_role', {
 
 export const reportCardTable = pgTable('report_card', {
   id: text('id').primaryKey(),
+  schoolId: text('school_id').references(() => school.id, { onDelete: 'cascade' }),
   studentId: text('studentId').notNull(),
   studentName: text('studentName').notNull(),
   className: text('className').notNull(),

@@ -56,25 +56,26 @@ export async function getAdminSupportTickets() {
   const schoolId = await requireSchoolAdminScope()
   const query = db.select({ ticket: supportTicket, userRecord: userTable })
     .from(supportTicket)
-    .innerJoin(userTable, eq(userTable.id, supportTicket.userId))
+    .leftJoin(userTable, eq(userTable.id, supportTicket.userId))
   const list = schoolId
     ? await query.where(eq(userTable.schoolId, schoolId)).orderBy(desc(supportTicket.createdAt))
     : await query.orderBy(desc(supportTicket.createdAt))
 
   return list.map(({ ticket, userRecord }) => ({
     ...ticket,
-    userName: userRecord.name || 'Portal User',
-    userEmail: userRecord.email || 'N/A',
+    userName: userRecord?.name || ticket.contactName || 'Portal User',
+    userEmail: userRecord?.email || ticket.contactEmail || 'N/A',
   }))
 }
 
 export async function resolveSupportTicket(ticketId: string, resolution: string) {
   const schoolId = await requireSchoolAdminScope()
-  if (!resolution) throw new Error('Please provide a resolution notes.')
+  const resolutionText = resolution.trim()
+  if (!resolutionText || resolutionText.length > 2000) throw new Error('Please provide resolution notes of up to 2,000 characters.')
 
   const [ticket] = await db.select({ ticket: supportTicket, ownerSchoolId: userTable.schoolId })
     .from(supportTicket)
-    .innerJoin(userTable, eq(userTable.id, supportTicket.userId))
+    .leftJoin(userTable, eq(userTable.id, supportTicket.userId))
     .where(eq(supportTicket.id, ticketId))
     .limit(1)
   if (!ticket || (schoolId && ticket.ownerSchoolId !== schoolId)) {
@@ -84,7 +85,7 @@ export async function resolveSupportTicket(ticketId: string, resolution: string)
   const result = await db.update(supportTicket)
     .set({
       status: 'RESOLVED',
-      resolution,
+      resolution: resolutionText,
       resolvedAt: new Date(),
       updatedAt: new Date()
     })
@@ -113,9 +114,11 @@ export async function getAdminDisputes() {
 
     if (
       schoolId &&
-      userRecord?.schoolId !== schoolId &&
-      studentRecord?.schoolId !== schoolId &&
-      paymentRecord?.schoolId !== schoolId
+      (
+        ![userRecord?.schoolId, studentRecord?.schoolId, paymentRecord?.schoolId].some(Boolean) ||
+        [userRecord?.schoolId, studentRecord?.schoolId, paymentRecord?.schoolId]
+          .some((referencedSchoolId) => referencedSchoolId && referencedSchoolId !== schoolId)
+      )
     ) {
       continue
     }
@@ -146,7 +149,9 @@ export async function resolveDispute(disputeId: string, resolution: string) {
     const relatedPayment = complaint.relatedPaymentId
       ? await db.query.payment.findFirst({ where: eq(payment.id, complaint.relatedPaymentId) })
       : null
-    if (reporter?.schoolId !== schoolId && relatedStudent?.schoolId !== schoolId && relatedPayment?.schoolId !== schoolId) {
+    const referencedSchoolIds = [reporter?.schoolId, relatedStudent?.schoolId, relatedPayment?.schoolId]
+      .filter((referencedSchoolId): referencedSchoolId is string => Boolean(referencedSchoolId))
+    if (!referencedSchoolIds.length || referencedSchoolIds.some((referencedSchoolId) => referencedSchoolId !== schoolId)) {
       throw new Error('Complaint not found in the active school.')
     }
   }
