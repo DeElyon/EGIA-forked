@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { sqlClient } from '@/lib/db'
+import { formatStudentSubjectPerformance } from '@/lib/learn-ai-learning-context'
 import { getLearnAiBalance, hasActiveCbtSession, isCrossOriginLearnAiRequest, LEARN_AI_ROLES } from '@/lib/learn-ai'
 import { isSystemFeatureEnabled } from '@/lib/resilience/feature-flags'
 
@@ -136,7 +137,6 @@ export async function POST(request: Request) {
             and result."createdAt" >= now() - interval '180 days'
           group by learner.department, subject.name
           order by avg(result.score::numeric) asc
-          limit 12
         `,
         sqlClient`
           select count(*)::integer as total_days,
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
       const scores = getRows(subjectScores).map((row) => ({
         department: getTextField(row, 'department'),
         subject: getTextField(row, 'subject'),
-        average_score: getTextField(row, 'average_score'),
+        averageScore: getNumberField(row, 'average_score'),
         assessments: getNumberField(row, 'assessments'),
       }))
       const attendance = getRows(attendanceSummary)[0]
@@ -172,9 +172,7 @@ export async function POST(request: Request) {
         rounds: getNumberField(row, 'rounds'),
         wins: getNumberField(row, 'wins'),
       }))
-      const scoreContext = scores.map((item) =>
-        `${item.department ? `${item.department} department, ` : ''}${item.subject}: ${item.average_score}% average across ${item.assessments} recent assessments`
-      ).join('; ')
+      const scoreContext = formatStudentSubjectPerformance(scores)
       const attendanceContext = attendance && getNumberField(attendance, 'total_days')
         ? `${getNumberField(attendance, 'attended_days')} of ${getNumberField(attendance, 'total_days')} attendance days in the last 90 days`
         : ''
@@ -182,7 +180,7 @@ export async function POST(request: Request) {
         `${item.game_type}: ${item.points} points, ${item.wins} wins from ${item.rounds} rounds`
       ).join('; ')
       learningContext = [
-        scoreContext ? `Learner subject performance (aggregated, last 180 days): ${scoreContext}.` : '',
+        scoreContext,
         attendanceContext ? `School participation: ${attendanceContext}.` : '',
         gameContext ? `Learning game activity (last 90 days): ${gameContext}.` : '',
         'Use low subject averages to offer short, concrete practice and check understanding; build on stronger subjects as confidence anchors. Do not shame or overstate what limited data means.',
@@ -262,7 +260,44 @@ export async function POST(request: Request) {
         games.length ? `Learning game activity: ${games.map((item) => `${item.class_name} ${item.game_type}: ${item.points} points, ${item.wins}/${item.rounds} wins`).join('; ')}.` : '',
         'Give supportive, practical guidance; never compare siblings or infer ability from attendance or game results alone.',
       ].filter(Boolean).join('\n')
-    } else if (schoolId && ['TEACHER', 'ADMIN', 'SCHOOL_ADMIN'].includes(role)) {
+    } else if (schoolId && role === 'TEACHER') {
+      const assignedPerformance = await sqlClient`
+        select assigned_class.name as class_name,
+               assessment.target_department as department,
+               subject.name as subject,
+               round(avg(result.score::numeric), 1)::text as average_score,
+               count(*)::integer as assessments
+        from public.assessment_result as result
+        inner join public.assessment as assessment on assessment.id = result."assessmentId"
+        inner join public.subject as subject on subject.id = assessment."subjectId"
+        inner join public.teacher_on_subject as assignment
+          on assignment."subjectId" = assessment."subjectId"
+          and assignment."classId" = assessment.target_class_id
+        inner join public.teacher as educator on educator.id = assignment."teacherId"
+        inner join public."class" as assigned_class on assigned_class.id = assignment."classId"
+        inner join public.student as learner on learner.id = result."studentId"
+        where educator.userid = ${session.user.id}
+          and educator.schoolid = ${schoolId}
+          and assigned_class."schoolId" = ${schoolId}
+          and learner.schoolid = ${schoolId}
+          and assessment.schoolid = ${schoolId}
+          and lower(result.status) = 'completed'
+          and result."createdAt" >= now() - interval '180 days'
+        group by assigned_class.name, assessment.target_department, subject.name
+        having count(*) >= 5
+        order by avg(result.score::numeric) asc
+      `
+      const assignedSubjects = getRows(assignedPerformance).map((row) => ({
+        className: getTextField(row, 'class_name'),
+        department: getTextField(row, 'department'),
+        subject: getTextField(row, 'subject'),
+        averageScore: getTextField(row, 'average_score'),
+        assessments: getNumberField(row, 'assessments'),
+      }))
+      if (assignedSubjects.length) {
+        learningContext = `Anonymized performance in your assigned classes and subjects (only groups with at least five recent assessments): ${assignedSubjects.map((item) => `${item.className}${item.department ? ` ${item.department} department` : ''} ${item.subject}: ${item.averageScore}% average across ${item.assessments} assessments`).join('; ')}.`
+      }
+    } else if (schoolId && ['ADMIN', 'SCHOOL_ADMIN'].includes(role)) {
       const schoolPerformance = await sqlClient`
         select subject.departments, subject.name as subject,
                round(avg(result.score::numeric), 1)::text as average_score,
@@ -278,7 +313,7 @@ export async function POST(request: Request) {
         group by subject.departments, subject.name
         having count(*) >= 5
         order by avg(result.score::numeric) asc
-        limit 12
+        limit 40
       `
       const subjects = getRows(schoolPerformance).map((row) => ({
         departments: Array.isArray(row.departments) ? row.departments.join(', ') : '',
