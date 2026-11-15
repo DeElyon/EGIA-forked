@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { auth } from '@/lib/auth'
 import { assessment, class_, student, teacherOnSubject } from '@/lib/db/schema'
 import { db } from '@/lib/db'
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,7 @@ export default async function WeekendAssessmentsPage() {
 
   const studentProfile = await db.query.student.findFirst({
     where: eq(student.userId, session.user.id),
-    columns: { id: true, schoolId: true, class: true },
+    columns: { id: true, schoolId: true, class: true, department: true },
   })
   if (!studentProfile) redirect('/dashboard-redirect')
 
@@ -43,12 +43,17 @@ export default async function WeekendAssessmentsPage() {
       items = await db.query.assessment.findMany({
         where: and(
           eq(assessment.status, 'published'),
-          eq(assessment.type, 'WEEKEND'),
+          eq(assessment.type, 'WEEKEND_ASSIGNMENT'),
+          eq(assessment.schoolId, studentProfile.schoolId),
           inArray(assessment.subjectId, subjectIds),
-          or(eq(assessment.schoolId, studentProfile.schoolId), isNull(assessment.schoolId)),
+          inArray(assessment.targetClassId, classIds),
         ),
         orderBy: [desc(assessment.createdAt)],
       })
+      items = items.filter((item) =>
+        !item.targetDepartment ||
+        item.targetDepartment.trim().toLowerCase() === studentProfile.department?.trim().toLowerCase()
+      )
     }
   }
 

@@ -7,6 +7,16 @@ ALTER TABLE public.support_ticket
   ADD COLUMN IF NOT EXISTS contact_name text,
   ADD COLUMN IF NOT EXISTS contact_email text;
 
-ALTER TABLE public.support_ticket
-  ADD CONSTRAINT support_ticket_contact_identity_check
-  CHECK ("userId" IS NOT NULL OR (contact_name IS NOT NULL AND contact_email IS NOT NULL));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'support_ticket_contact_identity_check'
+      AND conrelid = 'public.support_ticket'::regclass
+  ) THEN
+    ALTER TABLE public.support_ticket
+      ADD CONSTRAINT support_ticket_contact_identity_check
+      CHECK ("userId" IS NOT NULL OR (contact_name IS NOT NULL AND contact_email IS NOT NULL));
+  END IF;
+END $$;
