@@ -25,6 +25,7 @@ import { randomUUID } from 'crypto'
 import { generateAdmissionNumber, isValidAdmissionNumber, generateStaffId } from '@/lib/id'
 import { studentEnrollmentSchema } from '@/lib/validators/student.schema'
 import { initializePaystackPayment } from '@/lib/payments/service'
+import { notifyPaymentConfirmed } from '@/lib/payments/notifications'
 
 const STUDENT_REGISTRATION_FEE = 2000
 const PAYSTACK_GATEWAY_FEE = 161.25
@@ -244,7 +245,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
   await checkAdminPermission('update', 'payment')
   const schoolId = await getAdminSchoolId()
 
-  return await db.transaction(async (tx) => {
+  const updatedPayment = await db.transaction(async (tx) => {
     const existingPayment = await tx.query.payment.findFirst({
       where: and(eq(payment.id, paymentId), eq(payment.schoolId, schoolId))
     })
@@ -280,6 +281,8 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
     revalidatePath('/dashboard/admin/finance/fees/pending')
     return result[0]
   })
+  if (status === 'success') await notifyPaymentConfirmed(updatedPayment.id)
+  return updatedPayment
 }
 
 export async function getAdminDashboardStats() {

@@ -177,8 +177,8 @@ export default function SignInPage() {
             aria-pressed={loginMode === 'superadmin'}
             className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-all ${
               loginMode === 'superadmin'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg border border-purple-400/30'
-                : 'text-purple-400 hover:text-purple-300'
+                ? 'bg-slate-700 text-white shadow-sm border border-slate-600'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Crown className="w-4 h-4 text-amber-400" />
@@ -288,8 +288,8 @@ export default function SignInPage() {
                 disabled={loading}
                 className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold tracking-wide text-white shadow-lg transition-all focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${
                   loginMode === 'superadmin'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/20'
-                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20'
+                    ? 'bg-slate-700 hover:bg-slate-600 shadow-black/20'
+                    : 'bg-slate-700 hover:bg-slate-600 shadow-black/20'
                 }`}
               >
                 {loading ? (

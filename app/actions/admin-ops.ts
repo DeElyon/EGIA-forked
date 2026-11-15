@@ -20,6 +20,7 @@ import { eq, and, sql, desc } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { canSchoolAdminAccess } from '@/lib/auth/school-admin-permissions'
+import { notifyPaymentConfirmed } from '@/lib/payments/notifications'
 
 async function requireAdmin() {
   const session = await auth.getSession()
@@ -451,6 +452,7 @@ export async function reconcilePaymentAction(paymentId: string, status: 'RECONCI
     }
   })
 
+  if (status === 'RECONCILED') await notifyPaymentConfirmed(paymentRecord.id)
   revalidatePath('/dashboard/admin/finance/ledger')
   revalidatePath('/dashboard/admin/finance/reconciliation')
   return { success: true }
