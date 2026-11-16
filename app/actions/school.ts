@@ -11,6 +11,8 @@ import { auth } from '@/lib/auth'
 import { sendSchoolRegistrationOtpOnce } from '@/lib/school-registration-otp'
 import { verifyOtp } from '@/lib/otp'
 import { canSchoolAdminAccess } from '@/lib/auth/school-admin-permissions'
+import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
+import { getSupabaseSecretKey, getSupabaseUrl } from '@/utils/supabase/config'
 import {
   initializePaystackPayment as serviceInitializePaystackPayment,
   verifyPaystackPayment as serviceVerifyPaystackPayment,
@@ -25,6 +27,7 @@ export interface SchoolRegistrationInput {
   adminName: string
   adminPhone: string
   adminEmail: string
+  password: string
   adminLevel?: string
   proofOfAddressType?: string
   proofOfAddressFileUrl?: string
@@ -53,12 +56,37 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
     if (!input.name || !input.adminEmail || !input.adminName || !input.location) {
       return { success: false, error: 'School name, location, contact email, and applicant name are required.' }
     }
+    const email = input.adminEmail.trim().toLowerCase()
+    if (!/^\S+@\S+\.\S+$/.test(email)) return { success: false, error: 'Enter a valid applicant email address.' }
+    if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
+      return { success: false, error: 'Password must be between 8 and 128 characters.' }
+    }
+
+    const secretKey = getSupabaseSecretKey()
+    if (!secretKey) return { success: false, error: 'School registration is temporarily unavailable.' }
+    const adminClient = createSupabaseAdminClient(getSupabaseUrl(), secretKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
 
     const schoolId = randomUUID()
     const applicationId = randomUUID()
     const schoolCode = await generateSchoolCode(input.name)
     const paymentReference = `SCH-PAY-${randomUUID().replaceAll('-', '').toUpperCase()}`
-    const adminEmail = input.adminEmail.trim().toLowerCase()
+    const adminEmail = email
+
+    const authUser = await adminClient.auth.admin.createUser({
+      id: randomUUID(),
+      email: adminEmail,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.adminName, role: 'SCHOOL_REGISTRATION_PENDING' },
+    })
+    if (authUser.error || !authUser.data.user) {
+      const message = authUser.error?.message || 'Account could not be created.'
+      return { success: false, error: /already|registered|exists/i.test(message)
+        ? 'An account already uses this email. Sign in or use a different email address.'
+        : 'The school administrator account could not be created. Please try again.' }
+    }
 
     // 1. Create School record in PENDING state
     await db.insert(school).values({
@@ -99,6 +127,14 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
       logoUrl: input.logoUrl || null,
       logoPath: input.logoPath || null,
       submittedAt: new Date(),
+    })
+    await db.insert(userTable).values({
+      id: authUser.data.user.id,
+      email: adminEmail,
+      name: input.adminName,
+      schoolId,
+      adminLevel: input.adminLevel || 'PRIMARY_ADMIN',
+      updatedAt: new Date(),
     })
 
     // 3. Initialize Paystack charge via centralized service (NGN 30,000 + NGN 161.25 fee)

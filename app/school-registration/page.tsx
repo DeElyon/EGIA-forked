@@ -57,6 +57,8 @@ export default function SchoolRegistrationPage() {
     adminName: '',
     adminPhone: '',
     adminEmail: '',
+    password: '',
+    confirmPassword: '',
     adminGender: 'Male',
     adminLevel: 'PRIMARY_ADMIN',
     proofOfAddressType: 'ELECTRICITY_BILL',
@@ -100,6 +102,7 @@ export default function SchoolRegistrationPage() {
 
   // Post-payment OTP Verification & Glassy UI state
   const [showOtpStep, setShowOtpStep] = useState(false)
+  const [showPaymentSuccessModal, setShowPaymentSuccessModal] = useState(false)
   const [otpInput, setOtpInput] = useState('')
   const [otpVerified, setOtpVerified] = useState(false)
   const [otpError, setOtpError] = useState('')
@@ -130,6 +133,14 @@ export default function SchoolRegistrationPage() {
 
     if (!termsAccepted) {
       setErrorMessage('Please accept the terms and policies to continue.')
+      return
+    }
+    if (formData.password.length < 8) {
+      setErrorMessage('Choose a password with at least 8 characters.')
+      return
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMessage('Password and confirm password must match.')
       return
     }
 
@@ -184,7 +195,7 @@ export default function SchoolRegistrationPage() {
         documentVerificationStatus: confirmRes.documentVerificationStatus || prev.documentVerificationStatus,
         approvalStatus: confirmRes.approvalStatus || prev.approvalStatus,
       }) : prev)
-      setShowOtpStep(true)
+      setShowPaymentSuccessModal(true)
       if (confirmRes.otpSent) {
         setSuccessMessage('Payment verified. Enter the verification code sent to your email or registered device.')
       } else {
@@ -743,10 +754,23 @@ export default function SchoolRegistrationPage() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:border-blue-500 transition shadow-inner"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-1">Password *</label>
+                  <input type="password" required minLength={8} autoComplete="new-password" value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:border-blue-500 transition shadow-inner" />
+                  <p className="mt-1 text-[11px] text-slate-500">At least 8 characters. Used for your pending registration account.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-1">Confirm Password *</label>
+                  <input type="password" required minLength={8} autoComplete="new-password" value={formData.confirmPassword}
+                    onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:border-blue-500 transition shadow-inner" />
+                </div>
               </div>
 
               <p className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs text-blue-200">
-                Account access is created after Super Admin approval. A temporary password will be emailed and must be changed at first sign-in.
+                Your password is secured by Supabase Auth. Dashboard access is enabled after payment, document review, and Super Admin approval.
               </p>
 
               <div>
@@ -821,6 +845,17 @@ export default function SchoolRegistrationPage() {
           </form>
         )}
       </main>
+
+      {showPaymentSuccessModal && (
+        <div role="dialog" aria-modal="true" aria-labelledby="payment-confirmed-title" className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/85 p-4 backdrop-blur-md">
+          <div className="w-full max-w-md space-y-5 rounded-3xl border border-emerald-500/40 bg-slate-900 p-7 text-center shadow-2xl">
+            <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400" />
+            <h2 id="payment-confirmed-title" className="text-xl font-black text-white">Payment confirmed</h2>
+            <p className="text-sm text-slate-300">Paystack confirmed the registration payment. A verification code has been sent to your email and registered device when available.</p>
+            <button type="button" onClick={() => { setShowPaymentSuccessModal(false); setShowOtpStep(true) }} className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-500">Continue to OTP verification</button>
+          </div>
+        </div>
+      )}
 
       <footer className="relative max-w-5xl mx-auto w-full text-center py-4 border-t border-slate-800 text-[10px] font-black text-slate-500 uppercase tracking-widest z-10">
         &copy; {new Date().getFullYear()} EL LEARNERS APP • School Registration

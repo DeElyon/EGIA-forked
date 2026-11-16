@@ -55,6 +55,11 @@ export default function SignInPage() {
         return
       }
 
+      if (res.success && 'redirectTo' in res && res.redirectTo === '/registration-waiting-room') {
+        window.location.href = res.redirectTo
+        return
+      }
+
       if (!res.success || !res.context) {
         setError(res.error || 'Authentication failed. Please verify your credentials.')
         setLoading(false)

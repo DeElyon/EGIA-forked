@@ -754,11 +754,22 @@ export async function approveSchoolApplicationAction(input: {
     }
 
     // Attach SCHOOL_ADMIN identity
-    await db.insert(userRole).values({
-      id: randomUUID(),
-      userId: targetUserId!,
-      role: 'SCHOOL_ADMIN',
-    }).onConflictDoNothing()
+    const existingRole = await db.query.userRole.findFirst({ where: eq(userRole.userId, targetUserId!) })
+    if (existingRole) {
+      await db.update(userRole).set({ role: 'SCHOOL_ADMIN' }).where(eq(userRole.userId, targetUserId!))
+      await db.update(user).set({
+        schoolId: appRecord.schoolId,
+        adminLevel: targetAdminLevel,
+        mustChangePassword: false,
+        updatedAt: new Date(),
+      }).where(eq(user.id, targetUserId!))
+    } else {
+      await db.insert(userRole).values({
+        id: randomUUID(),
+        userId: targetUserId!,
+        role: 'SCHOOL_ADMIN',
+      }).onConflictDoNothing()
+    }
 
     if (appRecord.schoolId) {
       await db.insert(schoolAdminRoles).values({
