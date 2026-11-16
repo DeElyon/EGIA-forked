@@ -51,7 +51,7 @@ export default async function RegistrationWaitingRoomPage() {
         </div>
         {application.rejectionReason && <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">Review note: {application.rejectionReason}</p>}
         <p className="text-center text-xs text-slate-400">This page checks for status changes every few seconds. You can safely sign out and return later.</p>
-        <WaitingRoomRefresh />
+        <WaitingRoomRefresh email={session.user.email} />
         <div className="text-center"><a href="/auth/signin" className="text-sm font-semibold text-blue-300 hover:text-blue-200">Sign out or use another account</a></div>
       </section>
     </main>

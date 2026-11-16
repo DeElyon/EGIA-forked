@@ -12,7 +12,6 @@ import { completeLearnAiPurchase } from '@/lib/learn-ai'
 import { notifyPaymentConfirmed, notifyPaymentStatus } from '@/lib/payments/notifications'
 import { allocatePaymentAcrossInstallments } from '@/lib/payments/installments'
 import { calculateSchoolRegistrationTotal } from '@/lib/school-registration'
-import { sendSchoolRegistrationOtpOnce } from '@/lib/school-registration-otp'
 
 export { validPaystackSignature, validatePaystackWebhook, paystackAmountMatches }
 
@@ -383,11 +382,6 @@ export async function verifyPaystackPayment(params: PaymentVerificationParams) {
     if (registrationSchoolId) {
       await syncSchoolRegistrationLedger(registrationSchoolId, reference, 'SUCCESS')
     }
-    try {
-      await sendSchoolRegistrationOtpOnce(reference)
-    } catch (error) {
-      console.error('School registration payment was confirmed, but OTP dispatch failed.', { reference, error })
-    }
   } else if (status === 'failed' || status === 'abandoned') {
     if (paymentRec) {
       await markPaymentFailed(paymentRec.id)
@@ -718,13 +712,6 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
         const registrationSchoolId = schRecord?.id || appRecord?.schoolId
         if (registrationSchoolId) {
           await syncSchoolRegistrationLedger(registrationSchoolId, reference, 'SUCCESS')
-        }
-        if (registrationSchoolId) {
-          try {
-            await sendSchoolRegistrationOtpOnce(reference)
-          } catch (error) {
-            console.error('School registration payment was confirmed, but OTP dispatch failed.', { reference, error })
-          }
         }
       } else if (isFailed) {
         if (appRecord) {

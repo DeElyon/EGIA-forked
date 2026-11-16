@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   registerSchoolAction,
   confirmSchoolPaymentAction,
@@ -8,6 +8,8 @@ import {
   uploadApplicationProofOfAddressAction,
   getSchoolApplicationStatusAction,
   verifySchoolRegistrationOtpAction,
+  sendSchoolRegistrationPaymentOtpAction,
+  getSchoolRegistrationByPaymentReferenceAction,
 } from '@/app/actions/school'
 import {
   CheckCircle2,
@@ -107,6 +109,33 @@ export default function SchoolRegistrationPage() {
   const [otpVerified, setOtpVerified] = useState(false)
   const [otpError, setOtpError] = useState('')
 
+  useEffect(() => {
+    const reference = new URLSearchParams(window.location.search).get('reference')
+    if (!reference) return
+    window.history.replaceState({}, '', '/school-registration')
+    let active = true
+    void (async () => {
+      const result = await getSchoolRegistrationByPaymentReferenceAction(reference)
+      if (!active || !result.success || !result.application) return
+      const application = result.application
+      setAppState(application)
+      if (application.paymentStatus === 'SUCCESS') {
+        setShowPaymentSuccessModal(true)
+        return
+      }
+      const verification = await confirmSchoolPaymentAction(reference)
+      if (!active || !verification.success) return
+      setAppState((current) => current ? ({
+        ...current,
+        paymentStatus: 'SUCCESS',
+        documentVerificationStatus: verification.documentVerificationStatus || current.documentVerificationStatus,
+        approvalStatus: verification.approvalStatus || current.approvalStatus,
+      }) : current)
+      setShowPaymentSuccessModal(true)
+    })()
+    return () => { active = false }
+  }, [])
+
   const handleClassToggle = (cls: string) => {
     if (selectedClasses.includes(cls)) {
       if (selectedClasses.length === 1) return
@@ -196,16 +225,48 @@ export default function SchoolRegistrationPage() {
         approvalStatus: confirmRes.approvalStatus || prev.approvalStatus,
       }) : prev)
       setShowPaymentSuccessModal(true)
-      if (confirmRes.otpSent) {
-        setSuccessMessage('Payment verified. Enter the verification code sent to your email or registered device.')
-      } else {
-        setOtpError('Payment is confirmed, but the verification code could not be delivered. Please try confirming payment again or contact support.')
-      }
+      setSuccessMessage('Payment verified. Continue to send your verification code.')
     } else {
       setErrorMessage(confirmRes.error || 'Payment confirmation failed.')
     }
     setLoading(false)
   }
+
+  const handleContinueToOtp = async () => {
+    if (!appState?.applicationId) return
+    setLoading(true)
+    setOtpError('')
+    const result = await sendSchoolRegistrationPaymentOtpAction(appState.applicationId)
+    setLoading(false)
+    if (!result.success) {
+      setOtpError(result.error || 'The verification code could not be delivered. Please try again.')
+      return
+    }
+    setShowPaymentSuccessModal(false)
+    setShowOtpStep(true)
+    setSuccessMessage('A verification code was sent to your email and registered device when available.')
+  }
+
+  useEffect(() => {
+    if (!appState?.applicationId) return
+    let active = true
+    const refreshStatus = async () => {
+      const statusRes = await getSchoolApplicationStatusAction(appState.applicationId!)
+      if (!active || !statusRes.success || !statusRes.application) return
+      if (appState.paymentStatus !== 'SUCCESS' && statusRes.application.paymentStatus === 'SUCCESS') {
+        setShowPaymentSuccessModal(true)
+      }
+      setAppState((previous) => previous ? ({
+        ...previous,
+        paymentStatus: statusRes.application!.paymentStatus,
+        documentVerificationStatus: statusRes.application!.documentVerificationStatus,
+        approvalStatus: statusRes.application!.approvalStatus,
+        rejectionReason: statusRes.application!.rejectionReason,
+      }) : previous)
+    }
+    const timer = window.setInterval(() => void refreshStatus(), 4000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [appState?.applicationId, appState?.paymentStatus])
 
   const handleRetryPayment = async () => {
     if (!appState?.applicationId) return
@@ -851,8 +912,9 @@ export default function SchoolRegistrationPage() {
           <div className="w-full max-w-md space-y-5 rounded-3xl border border-emerald-500/40 bg-slate-900 p-7 text-center shadow-2xl">
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400" />
             <h2 id="payment-confirmed-title" className="text-xl font-black text-white">Payment confirmed</h2>
-            <p className="text-sm text-slate-300">Paystack confirmed the registration payment. A verification code has been sent to your email and registered device when available.</p>
-            <button type="button" onClick={() => { setShowPaymentSuccessModal(false); setShowOtpStep(true) }} className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-500">Continue to OTP verification</button>
+            <p className="text-sm text-slate-300">Paystack confirmed the registration payment. Continue to send a verification code to your email and registered device when available.</p>
+            {otpError && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-xs font-bold text-red-300">{otpError}</p>}
+            <button type="button" disabled={loading} onClick={() => void handleContinueToOtp()} className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-500 disabled:opacity-50">{loading ? 'Sending verification code…' : 'Continue to OTP verification'}</button>
           </div>
         </div>
       )}

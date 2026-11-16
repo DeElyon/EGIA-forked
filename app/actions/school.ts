@@ -28,6 +28,7 @@ export interface SchoolRegistrationInput {
   adminPhone: string
   adminEmail: string
   password: string
+  confirmPassword?: string
   adminLevel?: string
   proofOfAddressType?: string
   proofOfAddressFileUrl?: string
@@ -60,6 +61,9 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
     if (!/^\S+@\S+\.\S+$/.test(email)) return { success: false, error: 'Enter a valid applicant email address.' }
     if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
       return { success: false, error: 'Password must be between 8 and 128 characters.' }
+    }
+    if (input.confirmPassword !== input.password) {
+      return { success: false, error: 'Password and confirm password must match.' }
     }
 
     const secretKey = getSupabaseSecretKey()
@@ -148,7 +152,7 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
         description: `School registration subscription fee for ${input.name}`,
         customerEmail: adminEmail,
         customerName: input.adminName,
-        redirectUrl: `${(process.env.NEXT_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '')}/payment/return?reference=${encodeURIComponent(paymentReference)}`,
+        redirectUrl: `${(process.env.NEXT_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '')}/school-registration?reference=${encodeURIComponent(paymentReference)}`,
         metadata: {
           applicationId,
           schoolId,
@@ -221,7 +225,7 @@ export async function retrySchoolRegistrationPaymentAction(applicationId: string
         customerEmail: appRecord.applicantEmail,
         customerName: appRecord.applicantName,
         reference: paymentReference,
-        redirectUrl: `${siteUrl.replace(/\/$/, '')}/payment/return?reference=${encodeURIComponent(paymentReference)}`,
+        redirectUrl: `${siteUrl.replace(/\/$/, '')}/school-registration?reference=${encodeURIComponent(paymentReference)}`,
         metadata: { applicationId, schoolId: schoolRecord.id, paymentType: 'SCHOOL_REGISTRATION' },
       })
     } catch (error) {
@@ -406,38 +410,59 @@ export async function getSchoolApplicationStatusAction(applicationId: string) {
   try {
     if (!applicationId) return { success: false, error: 'Application ID is required.', requestId }
 
-    const { getCachedData } = await import('@/lib/cache')
-    return await getCachedData(`school-app-status:${applicationId}`, async () => {
-      const appRecord = await db.query.schoolRegistrationApplication.findFirst({
-        where: eq(schoolRegistrationApplication.id, applicationId)
-      })
+    const appRecord = await db.query.schoolRegistrationApplication.findFirst({
+      where: eq(schoolRegistrationApplication.id, applicationId)
+    })
 
-      if (!appRecord) {
-        return { success: false, error: 'Application not found.', requestId }
-      }
+    if (!appRecord) {
+      return { success: false, error: 'Application not found.', requestId }
+    }
 
-      const schRecord = appRecord.schoolId ? await db.query.school.findFirst({
-        where: eq(school.id, appRecord.schoolId)
-      }) : null
+    const schRecord = appRecord.schoolId ? await db.query.school.findFirst({
+      where: eq(school.id, appRecord.schoolId)
+    }) : null
 
-      return {
-        success: true,
-        application: {
-          paymentStatus: appRecord.paymentStatus,
-          documentVerificationStatus: appRecord.documentVerificationStatus,
-          approvalStatus: appRecord.approvalStatus,
-          rejectionReason: appRecord.rejectionReason,
-        },
-        schoolCode: schRecord?.code || null,
-      }
-    }, 60, [`school_app:${applicationId}`])
+    return {
+      success: true,
+      application: {
+        paymentStatus: appRecord.paymentStatus,
+        documentVerificationStatus: appRecord.documentVerificationStatus,
+        approvalStatus: appRecord.approvalStatus,
+        rejectionReason: appRecord.rejectionReason,
+      },
+      schoolCode: schRecord?.code || null,
+    }
   } catch (error: any) {
     return sanitizeServerError('getSchoolApplicationStatusAction', error, 'Unable to retrieve application status.')
   }
 }
 
+export async function getSchoolRegistrationByPaymentReferenceAction(paymentReference: string) {
+  if (!paymentReference || paymentReference.length > 120) {
+    return { success: false, error: 'Invalid payment reference.' }
+  }
+  const application = await db.query.schoolRegistrationApplication.findFirst({
+    where: eq(schoolRegistrationApplication.paymentReference, paymentReference),
+  })
+  if (!application) return { success: false, error: 'School registration payment was not found.' }
+  const schoolRecord = await db.query.school.findFirst({ where: eq(school.id, application.schoolId) })
+  return {
+    success: true,
+    application: {
+      applicationId: application.id,
+      adminEmail: application.applicantEmail,
+      schoolCode: schoolRecord?.code || '',
+      paymentReference: application.paymentReference,
+      schoolName: application.schoolName,
+      paymentStatus: application.paymentStatus,
+      documentVerificationStatus: application.documentVerificationStatus,
+      approvalStatus: application.approvalStatus,
+      rejectionReason: application.rejectionReason,
+    },
+  }
+}
+
 export async function confirmSchoolPaymentAction(paymentReference: string) {
-  const requestId = randomUUID()
   try {
     const verification = await serviceVerifyPaystackPayment({
       reference: paymentReference,
@@ -473,14 +498,6 @@ export async function confirmSchoolPaymentAction(paymentReference: string) {
       })
     }
 
-    let otpSent = false
-    try {
-      const delivery = await sendSchoolRegistrationOtpOnce(paymentReference)
-      otpSent = delivery.sent === true || delivery.alreadySent === true
-    } catch (error) {
-      console.error('School registration payment was confirmed, but OTP dispatch failed.', { requestId, error })
-    }
-
     return {
       success: true,
       schoolCode: rec?.code || verification.schoolCode,
@@ -489,10 +506,30 @@ export async function confirmSchoolPaymentAction(paymentReference: string) {
       paidAt: new Date().toISOString(),
       documentVerificationStatus: appRecord?.documentVerificationStatus || 'PENDING',
       approvalStatus: appRecord?.approvalStatus || 'PENDING_REVIEW',
-      otpSent,
     }
   } catch (error: any) {
     return sanitizeServerError('confirmSchoolPaymentAction', error, 'School registration payment confirmation failed.')
+  }
+}
+
+export async function sendSchoolRegistrationPaymentOtpAction(applicationId: string) {
+  if (!applicationId || applicationId.length > 80) {
+    return { success: false, error: 'Invalid application reference.' }
+  }
+  const application = await db.query.schoolRegistrationApplication.findFirst({
+    where: eq(schoolRegistrationApplication.id, applicationId),
+    columns: { paymentReference: true, paymentStatus: true },
+  })
+  if (!application || application.paymentStatus !== 'SUCCESS' || !application.paymentReference) {
+    return { success: false, error: 'The registration payment has not been confirmed yet.' }
+  }
+  try {
+    const delivery = await sendSchoolRegistrationOtpOnce(application.paymentReference)
+    return { success: delivery.sent === true || delivery.alreadySent === true,
+      error: 'Payment is confirmed, but the verification code could not be delivered. Please contact support.' }
+  } catch (error) {
+    console.error('School registration payment OTP dispatch failed.', { applicationId, error })
+    return { success: false, error: 'Payment is confirmed, but the verification code could not be delivered. Please try again or contact support.' }
   }
 }
 
