@@ -250,7 +250,7 @@ export async function recordManualSchoolPayment(data: {
       })
       const netPaid = paidRecords.reduce((sum, record) => sum + Math.max(
         0,
-        Number(record.amount || 0) - (['PAYSTACK', 'KORAPAY'].includes(record.paymentMethod.toUpperCase()) ? PAYSTACK_GATEWAY_FEE : 0),
+        Number(record.amount || 0) - (record.paymentMethod.toUpperCase() === 'PAYSTACK' ? PAYSTACK_GATEWAY_FEE : 0),
       ), 0)
       if (netPaid >= Number(approvedFee.amount)) {
         await tx.update(student)
@@ -291,7 +291,7 @@ async function getSuccessfulFeePayments(studentId: string, schoolId: string, ter
 function getNetPaidAmount(records: typeof payment.$inferSelect[]) {
   return records.reduce((sum, record) => sum + Math.max(
     0,
-    Number(record.amount || 0) - (['PAYSTACK', 'KORAPAY'].includes(record.paymentMethod.toUpperCase()) ? PAYSTACK_GATEWAY_FEE : 0),
+    Number(record.amount || 0) - (record.paymentMethod.toUpperCase() === 'PAYSTACK' ? PAYSTACK_GATEWAY_FEE : 0),
   ), 0)
 }
 
@@ -696,14 +696,6 @@ export async function submitManualPayment(data: { studentId: string; amount: str
   return { success: true, paymentId, uploadId }
 }
 
-export async function initializeKorapayPayment(data: { studentId: string; amount: number; feeType: string; description?: string }) {
-  return initializePaystackPayment(data)
-}
-
-export async function verifyKorapayPayment(reference: string) {
-  return verifyPaystackPayment(reference)
-}
-
 export async function initializePaystackPayment(data: { studentId: string; amount: number; feeType: string; description?: string }) {
   const session = await auth.getSession()
   if (!session?.user) throw new Error('Unauthorized')
@@ -974,7 +966,7 @@ export async function approveReceipt(uploadId: string) {
     const paymentRecord = await tx.query.payment.findFirst({
       where: and(eq(payment.id, upload.paymentId!), eq(payment.schoolId, upload.schoolId)),
     })
-    if (!paymentRecord || paymentRecord.status !== 'pending' || ['PAYSTACK', 'KORAPAY'].includes(paymentRecord.paymentMethod.toUpperCase())) {
+    if (!paymentRecord || paymentRecord.status !== 'pending' || paymentRecord.paymentMethod.toUpperCase() === 'PAYSTACK') {
       throw new Error('Receipt is not linked to a pending manual payment for this school.')
     }
 
@@ -989,7 +981,7 @@ export async function approveReceipt(uploadId: string) {
       eq(payment.id, paymentRecord.id),
       eq(payment.schoolId, upload.schoolId),
       eq(payment.status, 'pending'),
-      notInArray(payment.paymentMethod, ['PAYSTACK', 'KORAPAY']),
+      notInArray(payment.paymentMethod, ['PAYSTACK']),
     )).returning({ id: payment.id, feeType: payment.feeType, studentId: payment.studentId })
     if (!updatedPayment.length) throw new Error('Payment is no longer pending.')
 
@@ -1073,7 +1065,7 @@ export async function rejectReceipt(uploadId: string, reason: string) {
       eq(payment.id, rejectedUpload.paymentId),
       eq(payment.schoolId, upload.schoolId),
       eq(payment.status, 'pending'),
-      notInArray(payment.paymentMethod, ['PAYSTACK', 'KORAPAY']),
+      notInArray(payment.paymentMethod, ['PAYSTACK']),
     )).returning({ id: payment.id })
     if (!failedPayment) throw new Error('Receipt is not linked to a pending manual payment for this school.')
     const failedPaymentRecord = await tx.query.payment.findFirst({

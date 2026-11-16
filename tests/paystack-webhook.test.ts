@@ -68,6 +68,15 @@ test('validatePaystackWebhook - rejects malformed JSON even with a valid signatu
   }
 })
 
+test('validatePaystackWebhook - rejects non-object and malformed event payloads', () => {
+  const secret = 'sk_test_mock_paystack_secret_key'
+  for (const payload of ['null', JSON.stringify({ event: {}, data: { reference: 'ref_123' } })]) {
+    const signature = createHmac('sha512', secret).update(payload).digest('hex')
+    const result = validatePaystackWebhook(payload, signature, secret)
+    assert.equal(result.success, false)
+  }
+})
+
 test('validatePaystackWebhook - measures the payload limit in UTF-8 bytes', () => {
   const oversizedPayload = 'é'.repeat(500_001)
   const result = validatePaystackWebhook(oversizedPayload, null, 'sk_test_mock_paystack_secret_key')

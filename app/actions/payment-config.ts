@@ -46,7 +46,7 @@ export async function getSchoolPaymentConfigAction(schoolId?: string) {
   return {
     ...config,
     schoolName: schoolRec?.name || 'School Bank Account',
-    usePaystack: config ? ((config as any).usePaystack ?? (config as any).useKorapay ?? true) : true,
+    usePaystack: config?.usePaystack ?? true,
     bankName: config?.bankName || '',
     accountNumber: config?.accountNumber || '',
     accountName: config?.accountName || (schoolRec?.name ? `${schoolRec.name} Official Account` : ''),
@@ -115,7 +115,7 @@ export async function saveSchoolPaymentConfigAction(data: {
   if (existing) {
     await db.update(schoolPaymentConfig)
       .set({
-        useKorapay: data.usePaystack,
+        usePaystack: data.usePaystack,
         bankName: data.bankName || null,
         accountNumber: data.accountNumber || null,
         accountName: data.accountName || null,
@@ -127,7 +127,7 @@ export async function saveSchoolPaymentConfigAction(data: {
   } else {
     await db.insert(schoolPaymentConfig).values({
       schoolId: targetSchoolId,
-      useKorapay: data.usePaystack,
+      usePaystack: data.usePaystack,
       bankName: data.bankName || null,
       accountNumber: data.accountNumber || null,
       accountName: data.accountName || null,

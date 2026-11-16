@@ -209,7 +209,7 @@ export async function getPendingPayments() {
     where: and(
       eq(payment.schoolId, schoolId),
       eq(payment.status, 'pending'),
-      notInArray(payment.paymentMethod, ['PAYSTACK', 'KORAPAY']),
+      notInArray(payment.paymentMethod, ['PAYSTACK']),
     ),
     with: {
        student: true
@@ -254,7 +254,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
 
     if (!existingPayment) throw new Error('Payment record not found or tenant mismatch.')
     if (existingPayment.status !== 'pending') throw new Error('Only pending payments can be reviewed.')
-    if (['PAYSTACK', 'KORAPAY'].includes(existingPayment.paymentMethod.toUpperCase())) {
+    if (existingPayment.paymentMethod.toUpperCase() === 'PAYSTACK') {
       throw new Error('Online payments must be confirmed before reconciliation.')
     }
 
@@ -268,7 +268,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
         eq(payment.id, paymentId),
         eq(payment.schoolId, schoolId),
         eq(payment.status, 'pending'),
-        notInArray(payment.paymentMethod, ['PAYSTACK', 'KORAPAY']),
+        notInArray(payment.paymentMethod, ['PAYSTACK']),
       ))
       .returning()
 

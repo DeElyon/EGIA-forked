@@ -434,9 +434,9 @@ export const payment = pgTable('payment', {
   termId: text('termid'),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
   feeType: text('feetype'),
-  paymentMethod: text('paymentmethod').notNull(), // KORAPAY, BANK_TRANSFER, CUSTOM_LINK
+  paymentMethod: text('paymentmethod').notNull(), // PAYSTACK, BANK_TRANSFER, CUSTOM_LINK
   transactionReference: text('transactionreference').unique(),
-  korapayReference: text('korapayreference').unique(),
+  paystackReference: text('paystackreference').unique(),
   receiptUrl: text('receipturl'),
   reconciliationStatus: text('reconciliation_status').default('UNRECONCILED'), // UNRECONCILED, RECONCILED, DISPUTED
   reconciledBy: text('reconciled_by'),
@@ -483,7 +483,7 @@ export const assessmentLogs = pgTable('assessment_logs', {
 export const schoolPaymentConfig = pgTable('school_payment_config', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()::text`),
   schoolId: text('schoolid').notNull().unique(),
-  useKorapay: boolean('use_korapay').notNull().default(true),
+  usePaystack: boolean('use_paystack').notNull().default(true),
   bankName: text('bank_name'),
   accountNumber: text('account_number'),
   accountName: text('account_name'),
@@ -539,11 +539,11 @@ export const transactionLedger = pgTable('transaction_ledger', {
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
   currency: text('currency').default('NGN'),
   reference: text('reference').unique(),
-  gateway: text('gateway'), // KORAPAY, SCHOOL_ACCOUNT, SYSTEM
+  gateway: text('gateway'), // PAYSTACK, SCHOOL_ACCOUNT, SYSTEM
   status: text('status').default('PENDING'), // PENDING, SUCCESS, FAILED
   description: text('description'),
   metadata: jsonb('metadata'),
-  confirmationMethod: text('confirmation_method'), // KORAPAY_AUTO, MANUAL_UPLOAD, SCHOOL_ACCOUNT
+  confirmationMethod: text('confirmation_method'), // PAYSTACK_AUTO, MANUAL_UPLOAD, SCHOOL_ACCOUNT
   receiptUploadId: text('receipt_upload_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -13,7 +13,6 @@ import { notifyPaymentConfirmed, notifyPaymentStatus } from '@/lib/payments/noti
 import { allocatePaymentAcrossInstallments } from '@/lib/payments/installments'
 
 export { validPaystackSignature, validatePaystackWebhook, paystackAmountMatches }
-export { validPaystackSignature as validKorapaySignature } from './paystack-security'
 
 export interface InitializePaymentParams {
   amount: number // In Naira
@@ -264,9 +263,6 @@ export async function initializePaystackPayment(params: InitializePaymentParams)
   }
 }
 
-// Backward-compatible alias for existing callers
-export const initializeKorapayPayment = initializePaystackPayment
-
 /**
  * Verifies transaction directly with Paystack API.
  * Idempotently updates payment, school, application, and transaction tables.
@@ -490,9 +486,6 @@ export async function completeSchoolRenewalTransaction(reference: string) {
   })
 }
 
-// Backward-compatible alias
-export const verifyKorapayPayment = verifyPaystackPayment
-
 /**
  * Idempotently processes real-time Paystack webhooks (e.g. charge.success).
  */
@@ -504,12 +497,26 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
   }
 
   const { body, event, reference } = validation
-  const idempotencyKey = `paystack_webhook_${reference}_${event}`
+  const idempotencyKey = `paystack_webhook_v2_${reference}_${event}`
+  const eventIdentity = {
+    event,
+    reference,
+    transactionId: body.data?.id ?? null,
+    status: body.data?.status ?? null,
+    amount: body.data?.amount ?? null,
+    currency: body.data?.currency?.toUpperCase() ?? null,
+  }
 
   // 1. Check idempotency lock to prevent concurrent double-processing
-  const lock = await checkOrAcquireIdempotency(idempotencyKey, 'paystack_webhook', { event, reference })
+  const lock = await checkOrAcquireIdempotency(idempotencyKey, 'paystack_webhook', eventIdentity)
+  if (lock.payloadMismatch) {
+    return { success: false, error: 'Webhook event data conflicts with a previously received event.' }
+  }
   if (lock.isDuplicate) {
-    return { success: true, reference, note: 'Event already processed' }
+    if (lock.status === 'COMPLETED') {
+      return { success: true, reference, note: 'Event already processed' }
+    }
+    throw new Error('Webhook event is already being processed.')
   }
 
   const recordEvent = async (status: string) => {
@@ -674,9 +681,6 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
   }
 }
 
-// Backward-compatible alias
-export const processKorapayWebhook = processPaystackWebhook
-
 export async function markPaymentSuccessful(paymentId: string, paystackRef?: string) {
   const updatedPayment = await db.transaction(async (tx) => {
     const existingPayment = await tx.query.payment.findFirst({
@@ -688,7 +692,7 @@ export async function markPaymentSuccessful(paymentId: string, paystackRef?: str
     const updated = await tx.update(payment)
       .set({
         status: 'success',
-        korapayReference: paystackRef || existingPayment.korapayReference || undefined,
+        paystackReference: paystackRef || existingPayment.paystackReference || undefined,
         paidAt: existingPayment.paidAt || now,
         paymentDate: existingPayment.paymentDate || now,
         updatedAt: now,
@@ -764,7 +768,7 @@ export async function markPaymentSuccessful(paymentId: string, paystackRef?: str
           })
           const netPaymentAmount = Math.max(
             0,
-            Number(updated[0].amount) - (['PAYSTACK', 'KORAPAY'].includes(updated[0].paymentMethod.toUpperCase()) ? 161.25 : 0),
+            Number(updated[0].amount) - (updated[0].paymentMethod.toUpperCase() === 'PAYSTACK' ? 161.25 : 0),
           )
           const allocation = allocatePaymentAcrossInstallments(scheduledInstallments, netPaymentAmount)
           for (const installmentUpdate of allocation.updates) {
@@ -820,7 +824,7 @@ export async function reconcilePayment(paymentId: string, adminUserId: string) {
   const now = new Date()
   const existing = await db.query.payment.findFirst({ where: eq(payment.id, paymentId) })
   if (!existing) return null
-  if (['PAYSTACK', 'KORAPAY'].includes(existing.paymentMethod.toUpperCase())) {
+  if (existing.paymentMethod.toUpperCase() === 'PAYSTACK') {
     throw new Error('Gateway payments must be reconciled against the provider before being marked successful.')
   }
   if (existing.status !== 'pending') throw new Error('Only pending manual payments can be reconciled.')

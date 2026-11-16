@@ -497,7 +497,7 @@ export default function AdminPaymentsPage() {
                     filteredPayments.map((p) => {
                       const parentName = p.parent?.user?.name || 'Parent / Guardian'
                       const totalAmt = parseFloat(p.amount || '0')
-                      const hasOnlinePaymentFee = ['PAYSTACK', 'KORAPAY'].includes((p.paymentMethod || '').toUpperCase())
+                      const hasOnlinePaymentFee = (p.paymentMethod || '').toUpperCase() === 'PAYSTACK'
                       const gatewayFee = hasOnlinePaymentFee ? 161.25 : 0
                       const baseAmt = Math.max(0, totalAmt - gatewayFee)
 

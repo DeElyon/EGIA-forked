@@ -193,7 +193,7 @@ export default function MakePaymentPage() {
               </CardContent>
             </Card>
 
-            {(paymentConfig?.usePaystack ?? paymentConfig?.useKorapay ?? true) === false && children.some(c => c.id === childId) ? (
+            {paymentConfig?.usePaystack === false && children.some(c => c.id === childId) ? (
               <ManualPaymentPanel
                 config={paymentConfig}
                 amount={parseFloat(amount || '0')}
@@ -222,7 +222,7 @@ export default function MakePaymentPage() {
           </div>
 
           <div className="space-y-8">
-            {(paymentConfig?.usePaystack ?? paymentConfig?.useKorapay ?? true) && (
+            {paymentConfig?.usePaystack !== false && (
               <Card className="bg-slate-900 text-white border-none shadow-2xl rounded-[2.5rem] overflow-hidden sticky top-28">
                 <CardHeader className="p-10 pb-0">
                   <CardTitle className="text-amber-500 text-sm font-black uppercase tracking-[0.3em]">Checkout Summary</CardTitle>
