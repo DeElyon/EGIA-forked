@@ -1,5 +1,5 @@
 import { db, sqlClient } from '@/lib/db'
-import { payment, schoolRegistrationApplication, student, school, transactionLedger, transactions, paymentWebhookLogs, paymentInstallment } from '@/lib/db/schema'
+import { payment, schoolRegistrationApplication, schoolRegistrationBatches, student, school, transactionLedger, transactions, paymentWebhookLogs, paymentInstallment } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import {
@@ -11,6 +11,7 @@ import { checkOrAcquireIdempotency, completeIdempotencyKey, failIdempotencyKey }
 import { completeLearnAiPurchase } from '@/lib/learn-ai'
 import { notifyPaymentConfirmed, notifyPaymentStatus } from '@/lib/payments/notifications'
 import { allocatePaymentAcrossInstallments } from '@/lib/payments/installments'
+import { calculateSchoolRegistrationTotal } from '@/lib/school-registration'
 
 export { validPaystackSignature, validatePaystackWebhook, paystackAmountMatches }
 
@@ -366,6 +367,12 @@ export async function verifyPaystackPayment(params: PaymentVerificationParams) {
         const adultEducation = await import('@/app/actions/adult-education')
         await adultEducation.fulfillAdultEducationPayment(reference, transactionRec.amount, metadata)
       }
+      if (metadata?.paymentType === 'SCHOOL_BULK_REGISTRATION') {
+        const completedBatch = await completeSchoolRegistrationBatch(reference, 'SUCCESS')
+        if (!completedBatch) {
+          return { success: false, status: 'failed', schoolCode, schoolName, error: 'The student registration batch could not be verified.' }
+        }
+      }
     }
     if (schoolRec) {
       await db.update(school).set({ paymentStatus: 'PAID', updatedAt: new Date() }).where(eq(school.id, schoolRec.id))
@@ -383,6 +390,10 @@ export async function verifyPaystackPayment(params: PaymentVerificationParams) {
       await db.update(transactions)
         .set({ status: 'failed', updatedAt: new Date() })
         .where(and(eq(transactions.id, transactionRec.id), eq(transactions.status, 'pending')))
+      const metadata = transactionRec.metadata as Record<string, unknown> | null
+      if (metadata?.paymentType === 'SCHOOL_BULK_REGISTRATION') {
+        await completeSchoolRegistrationBatch(reference, 'FAILED')
+      }
     }
     if (schoolRec) {
       await db.update(school).set({ paymentStatus: 'FAILED', updatedAt: new Date() }).where(and(eq(school.id, schoolRec.id), eq(school.paymentStatus, 'PENDING')))
@@ -483,6 +494,113 @@ export async function completeSchoolRenewalTransaction(reference: string) {
     }).where(eq(school.id, schoolId))
 
     return { success: true as const, schoolId, nextDueDate, alreadyProcessed: false }
+  })
+}
+
+export async function completeSchoolRegistrationBatch(reference: string, outcome: 'SUCCESS' | 'FAILED') {
+  return db.transaction(async (tx) => {
+    const batch = await tx.query.schoolRegistrationBatches.findFirst({
+      where: eq(schoolRegistrationBatches.paymentReference, reference),
+    })
+    if (!batch) return false
+    if (batch.status === 'PAID') return outcome === 'SUCCESS'
+
+    if (outcome === 'FAILED') {
+      await tx.update(schoolRegistrationBatches)
+        .set({ status: 'FAILED', updatedAt: new Date() })
+        .where(and(
+          eq(schoolRegistrationBatches.id, batch.id),
+          eq(schoolRegistrationBatches.paymentReference, reference),
+          eq(schoolRegistrationBatches.status, 'PENDING'),
+        ))
+      return true
+    }
+
+    const transactionRecord = await tx.query.transactions.findFirst({
+      where: eq(transactions.reference, reference),
+    })
+    if (!transactionRecord || transactionRecord.status !== 'success' ||
+      transactionRecord.currency !== 'NGN' || Number(transactionRecord.amount) !== Number(batch.amount) ||
+      calculateSchoolRegistrationTotal(batch.studentCount) !== Number(batch.amount)) {
+      return false
+    }
+
+    const [claimed] = await tx.update(schoolRegistrationBatches)
+      .set({ status: 'PAID', updatedAt: new Date() })
+      .where(and(
+        eq(schoolRegistrationBatches.id, batch.id),
+        eq(schoolRegistrationBatches.paymentReference, reference),
+        eq(schoolRegistrationBatches.status, 'PENDING'),
+      ))
+      .returning({ id: schoolRegistrationBatches.id })
+    if (!claimed) {
+      const current = await tx.query.schoolRegistrationBatches.findFirst({
+        where: eq(schoolRegistrationBatches.id, batch.id),
+      })
+      return current?.status === 'PAID'
+    }
+
+    const studentIds = Array.isArray(batch.studentIds)
+      ? batch.studentIds.filter((value): value is string => typeof value === 'string')
+      : []
+    if (studentIds.length !== batch.studentCount) throw new Error('Registration batch has an invalid student list.')
+    const now = new Date()
+    const batchStudents = await tx.query.student.findMany({
+      where: and(inArray(student.id, studentIds), eq(student.schoolId, batch.schoolId)),
+    })
+    if (batchStudents.length !== batch.studentCount) throw new Error('A registration batch student is missing from its school.')
+
+    for (const enrolledStudent of batchStudents) {
+      const studentReference = `${reference}-ST-${enrolledStudent.id}`
+      const [paymentRecord] = await tx.insert(payment).values({
+        id: randomUUID(),
+        schoolId: batch.schoolId,
+        studentId: enrolledStudent.id,
+        parentId: enrolledStudent.parentId,
+        amount: '2161.25',
+        feeType: 'registration',
+        paymentMethod: 'PAYSTACK',
+        transactionReference: studentReference,
+        status: 'success',
+        paymentDate: now,
+        paidAt: now,
+        description: `Student registration fee for ${enrolledStudent.firstName} ${enrolledStudent.lastName}`,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoNothing().returning({ id: payment.id })
+
+      if (paymentRecord) {
+        await tx.insert(transactionLedger).values({
+          id: randomUUID(),
+          schoolId: batch.schoolId,
+          studentId: enrolledStudent.id,
+          userId: enrolledStudent.userId || undefined,
+          type: 'REGISTRATION_FEE',
+          direction: 'IN',
+          amount: '2161.25',
+          currency: 'NGN',
+          reference: studentReference,
+          gateway: 'PAYSTACK',
+          status: 'SUCCESS',
+          description: `Student registration fee for ${enrolledStudent.firstName} ${enrolledStudent.lastName}`,
+          confirmationMethod: 'PAYSTACK_AUTO',
+          metadata: { paymentId: paymentRecord.id, batchReference: reference },
+          createdAt: now,
+          updatedAt: now,
+        }).onConflictDoNothing()
+      }
+
+      await tx.update(student)
+        .set({
+          registrationStatus: 'ACTIVE',
+          registrationPaid: true,
+          lastRegistrationFeePaidAt: now,
+          registrationDueDate: new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000),
+          updatedAt: now,
+        })
+        .where(and(eq(student.id, enrolledStudent.id), eq(student.schoolId, batch.schoolId)))
+    }
+    return true
   })
 }
 
@@ -646,8 +764,20 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
             return { success: true, event, reference, note: 'School renewal was not fulfilled' }
           }
         }
+        if (transactionMetadata?.paymentType === 'SCHOOL_BULK_REGISTRATION') {
+          const completedBatch = await completeSchoolRegistrationBatch(reference, 'SUCCESS')
+          if (!completedBatch) {
+            await recordEvent('REJECTED_BULK_REGISTRATION_STATE')
+            await completeIdempotencyKey(idempotencyKey, { success: true, event, reference })
+            return { success: true, event, reference, note: 'Student registration batch was not fulfilled' }
+          }
+        }
       } else if (isFailed) {
         await db.update(transactions).set({ status: 'failed', updatedAt: new Date() }).where(and(eq(transactions.id, trxRecord.id), eq(transactions.status, 'pending')))
+        const transactionMetadata = trxRecord.metadata as Record<string, unknown> | null
+        if (transactionMetadata?.paymentType === 'SCHOOL_BULK_REGISTRATION') {
+          await completeSchoolRegistrationBatch(reference, 'FAILED')
+        }
       }
       await recordEvent('PROCESSED')
       await completeIdempotencyKey(idempotencyKey, { success: true, event, reference })
@@ -708,6 +838,7 @@ export async function markPaymentSuccessful(paymentId: string, paystackRef?: str
       await tx.update(student)
         .set({
           registrationStatus: 'ACTIVE',
+          registrationPaid: true,
           lastRegistrationFeePaidAt: now,
           registrationDueDate: new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000),
           updatedAt: now,

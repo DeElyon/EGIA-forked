@@ -31,7 +31,11 @@ export default function AddStudentPage() {
 
   const onSubmit = async (formData: StudentEnrollmentData) => {
     try {
-      await createStudent(formData)
+      const result = await createStudent(formData)
+      if ('checkoutUrl' in result && typeof result.checkoutUrl === 'string') {
+        window.location.assign(result.checkoutUrl)
+        return
+      }
       toast.success('Student profile created and enrolled successfully!')
       router.push('/dashboard/admin/users/students/list')
     } catch (error: any) {

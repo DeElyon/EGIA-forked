@@ -49,8 +49,8 @@ export default function AddTeacherPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      await createTeacher(formData)
-      alert('Teacher account created successfully! Admin has approved the enrollment.')
+      const teacher = await createTeacher(formData)
+      alert(`Teacher account created successfully! Staff ID: ${teacher.staffCode || 'pending'}`)
       router.push('/dashboard/admin/users/teachers/list')
     } catch (error: any) {
       console.error(error)

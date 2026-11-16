@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { school, schoolRegistrationApplication, transactions, transactionLedger, user as userTable, schoolAdminRoles } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
+import { randomInt } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { sanitizeServerError } from '@/lib/errors'
 import { auth } from '@/lib/auth'
@@ -38,15 +39,13 @@ export async function generateSchoolCode(schoolName: string): Promise<string> {
     .toUpperCase()
     .padEnd(4, 'S')
 
-  const uniqueDigits = Math.floor(10000 + Math.random() * 90000)
-  const finalCode = `${prefix}-${uniqueDigits}`
-
-  const existing = await db.select({ id: school.id }).from(school).where(eq(school.code, finalCode))
-  if (existing.length > 0) {
-    return generateSchoolCode(schoolName)
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const finalCode = `${prefix}-${randomInt(100000, 1_000_000)}`
+    const existing = await db.select({ id: school.id }).from(school).where(eq(school.code, finalCode)).limit(1)
+    if (!existing.length) return finalCode
   }
 
-  return finalCode
+  throw new Error('A unique school registration code could not be generated. Please try again.')
 }
 
 export async function registerSchoolAction(input: SchoolRegistrationInput) {
@@ -143,7 +142,6 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
     return {
       success: true,
       applicationId,
-      schoolId,
       schoolCode,
       paymentReference: initRes?.reference || paymentReference,
       checkoutUrl: initRes?.checkoutUrl || '',
@@ -466,9 +464,7 @@ export async function getSchoolByCodeAction(code: string) {
   try {
     const cleanCode = code.trim().toUpperCase()
     const result = await db.select({
-      id: school.id,
       name: school.name,
-      code: school.code,
       location: school.location,
       logoUrl: school.logoUrl,
       allowParents: school.allowParents,

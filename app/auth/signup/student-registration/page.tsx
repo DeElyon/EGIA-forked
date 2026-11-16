@@ -35,7 +35,7 @@ export default function StudentRegistrationPage() {
 
   // School Verification state
   const [verifyingSchool, setVerifyingSchool] = useState(false)
-  const [schoolDetails, setSchoolDetails] = useState<{ id: string; name: string; allowParents: boolean } | null>(null)
+  const [schoolDetails, setSchoolDetails] = useState<{ name: string; allowParents: boolean } | null>(null)
   const [schoolError, setSchoolError] = useState<string | null>(null)
 
   // Subjects Done tag list & database subjects with live search
@@ -90,7 +90,6 @@ export default function StudentRegistrationPage() {
       if (requestVersion !== schoolLookupVersion.current) return
       if (res.success && res.school) {
         setSchoolDetails({
-          id: res.school.id,
           name: res.school.name,
           allowParents: res.school.allowParents ?? true
         })
@@ -299,7 +298,7 @@ export default function StudentRegistrationPage() {
                 </div>
                 <Input
                   id="schoolCode"
-                  placeholder="e.g. EXCE-12345"
+                  placeholder="e.g. EXCE-123456"
                   value={formData.schoolCode}
                   onChange={e => {
                     const code = e.target.value.toUpperCase()

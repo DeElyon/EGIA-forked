@@ -24,7 +24,8 @@ import { revalidatePath } from 'next/cache'
 import { checkPermission } from '@/lib/abac'
 import { canSchoolAdminAccess } from '@/lib/auth/school-admin-permissions'
 import { randomUUID } from 'crypto'
-import { generateAdmissionNumber, isValidAdmissionNumber, generateStaffId } from '@/lib/id'
+import { generateAdmissionNumber, isValidAdmissionNumber, isValidStaffId } from '@/lib/id'
+import { generateSequentialAdmissionNumber, generateSequentialStaffCode } from '@/lib/admission'
 import { studentEnrollmentSchema } from '@/lib/validators/student.schema'
 import { initializePaystackPayment } from '@/lib/payments/service'
 import { notifyPaymentStatus } from '@/lib/payments/notifications'
@@ -106,8 +107,8 @@ export async function createStudent(data: any) {
     throw new Error('Permission denied')
   }
 
-  const shouldInitializeParentCheckout = actorRole === 'PARENT' || (actorRole === 'SCHOOL_ADMIN' && Boolean(data.parentId))
-  const registrationReference = shouldInitializeParentCheckout ? `EL-PARENT-REG-${Date.now()}-${randomUUID().slice(0, 8)}` : null
+  const shouldInitializeRegistrationCheckout = actorRole === 'PARENT' || actorRole === 'SCHOOL_ADMIN'
+  const registrationReference = shouldInitializeRegistrationCheckout ? `EL-PARENT-REG-${Date.now()}-${randomUUID().slice(0, 8)}` : null
   const newStudent = await db.transaction(async (tx) => {
     let parentId: string | null = null
     let schoolId: string | null
@@ -139,9 +140,13 @@ export async function createStudent(data: any) {
       }
     }
 
-    const admissionNumber = data.admissionNumber?.trim().toUpperCase() || generateAdmissionNumber(data.class)
-    if (!isValidAdmissionNumber(admissionNumber, data.class)) {
-      throw new Error('Admission number must match the school prefix and learner level: XXXX-P-###### for Primary 3–5/6 or XXXX-S-###### for JSS1–SSS3.')
+    const schoolRecord = schoolId
+      ? await tx.query.school.findFirst({ where: eq(school.id, schoolId) })
+      : null
+    const admissionNumber = data.admissionNumber?.trim().toUpperCase() ||
+      (schoolId ? await generateSequentialAdmissionNumber(schoolId, data.class) : generateAdmissionNumber(data.class))
+    if (!isValidAdmissionNumber(admissionNumber, data.class, schoolRecord?.code)) {
+      throw new Error('Admission number must match the school prefix and learner level: XXXX-P-###### for Primary 3–6 or XXXX-S-###### for JSS1–SSS3.')
     }
     const studentId = randomUUID()
 
@@ -184,7 +189,7 @@ export async function createStudent(data: any) {
   const linkedParentUser = linkedParent
     ? await db.query.user.findFirst({ where: eq(userTable.id, linkedParent.userId) })
     : null
-  const customerEmail = actorRole === 'PARENT' ? session.user.email : linkedParentUser?.email
+  const customerEmail = actorRole === 'PARENT' || !newStudent.parentId ? session.user.email : linkedParentUser?.email
   if (!customerEmail) throw new Error('A valid parent account email is required to start payment.')
   const initResult = await initializePaystackPayment({
     reference: registrationReference,
@@ -565,7 +570,11 @@ export async function createTeacher(data: any) {
   const email = (data.email || '').trim().toLowerCase()
   if (!email) throw new Error('Teacher email address is required')
 
-  const staffCode = data.staffCode || generateStaffId()
+  const schoolRecord = await db.query.school.findFirst({ where: eq(school.id, schoolId) })
+  const staffCode = data.staffCode?.trim().toUpperCase() || await generateSequentialStaffCode(schoolId)
+  if (!isValidStaffId(staffCode, schoolRecord?.code)) {
+    throw new Error('Staff ID must match this school’s registration code.')
+  }
   let userId = randomUUID()
 
   const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY

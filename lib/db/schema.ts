@@ -5,7 +5,7 @@ import { relations, sql } from 'drizzle-orm'
 export const school = pgTable('school', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  code: text('code').notNull().unique(), // First 4 letters of school name + unique 5 digits (e.g., SCHO12345)
+  code: text('code').notNull().unique(), // Four-letter school prefix plus six unique digits (e.g., SCHO-123456)
   location: text('location').notNull(),
   registeredClasses: jsonb('registeredclasses').notNull(), // Primary 3 to SSS3 selected
   allowParents: boolean('allowparents').notNull().default(true),
@@ -605,6 +605,22 @@ export const transactions = pgTable('transactions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+export const schoolRegistrationBatches = pgTable('school_registration_batches', {
+  id: text('id').primaryKey(),
+  schoolId: text('school_id').notNull(),
+  createdBy: text('created_by').notNull(),
+  paymentReference: text('payment_reference').notNull().unique(),
+  studentIds: jsonb('student_ids').notNull(),
+  studentCount: integer('student_count').notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  status: text('status').notNull().default('PENDING'), // PENDING, PAID, FAILED
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ columns: [t.schoolId], foreignColumns: [school.id] }).onDelete('cascade'),
+  foreignKey({ columns: [t.createdBy], foreignColumns: [user.id] }).onDelete('restrict'),
+])
 
 // ===== MESSAGING SYSTEM =====
 export const conversation = pgTable('conversation', {

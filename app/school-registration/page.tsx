@@ -35,7 +35,6 @@ const AVAILABLE_CLASSES = [
 
 type SchoolApplicationState = {
   applicationId?: string
-  schoolId?: string | null
   schoolCode?: string
   paymentReference?: string | null
   checkoutUrl?: string | null
@@ -162,7 +161,6 @@ export default function SchoolRegistrationPage() {
 
       setAppState({
         applicationId: res.applicationId,
-        schoolId: res.schoolId,
         schoolCode: res.schoolCode,
         paymentReference: res.paymentReference,
         checkoutUrl: res.checkoutUrl,

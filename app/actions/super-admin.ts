@@ -314,9 +314,26 @@ export async function getPendingSchoolApplicationsAction() {
   try {
     await checkSuperAdminPermission()
 
-    const applications = await db.query.schoolRegistrationApplication.findMany({
-      orderBy: (app, { desc }) => [desc(app.submittedAt)],
+    const applications = await db.select({
+      id: schoolRegistrationApplication.id,
+      schoolId: schoolRegistrationApplication.schoolId,
+      applicantEmail: schoolRegistrationApplication.applicantEmail,
+      applicantPhone: schoolRegistrationApplication.applicantPhone,
+      applicantName: schoolRegistrationApplication.applicantName,
+      schoolName: schoolRegistrationApplication.schoolName,
+      schoolCode: school.code,
+      schoolAddress: schoolRegistrationApplication.schoolAddress,
+      proofOfAddressUrl: schoolRegistrationApplication.proofOfAddressFileUrl,
+      documentVerificationStatus: schoolRegistrationApplication.documentVerificationStatus,
+      paymentStatus: schoolRegistrationApplication.paymentStatus,
+      approvalStatus: schoolRegistrationApplication.approvalStatus,
+      rejectionReason: schoolRegistrationApplication.rejectionReason,
+      submittedAt: schoolRegistrationApplication.submittedAt,
     })
+      .from(schoolRegistrationApplication)
+      .leftJoin(school, eq(school.id, schoolRegistrationApplication.schoolId))
+      .where(eq(schoolRegistrationApplication.approvalStatus, 'PENDING_REVIEW'))
+      .orderBy(desc(schoolRegistrationApplication.submittedAt))
 
     return { success: true, applications }
   } catch (error: any) {
@@ -353,6 +370,7 @@ export async function reviewSchoolApplicationAction(input: {
       .where(eq(schoolRegistrationApplication.id, input.applicationId))
 
     revalidatePath('/dashboard/super-admin/overview')
+    revalidatePath('/dashboard/super-admin/applications')
     return { success: true }
   } catch (error: any) {
     return sanitizeServerError('reviewSchoolApplicationAction', error, 'Failed to update application review state.')
@@ -634,6 +652,7 @@ export async function verifyApplicationDocumentAction(input: {
     }).where(eq(schoolRegistrationApplication.id, input.applicationId))
 
     revalidatePath('/dashboard/super-admin/overview')
+    revalidatePath('/dashboard/super-admin/applications')
     return { success: true }
   } catch (error: any) {
     console.error('Failed to verify application document:', { requestId, error: error?.message || error })
@@ -765,6 +784,7 @@ export async function approveSchoolApplicationAction(input: {
     }
 
     revalidatePath('/dashboard/super-admin/overview')
+    revalidatePath('/dashboard/super-admin/applications')
     return { success: true, schoolId: appRecord.schoolId, adminEmail: email }
   } catch (error: any) {
     console.error('Failed to approve school application:', { requestId, error: error?.message || error })
@@ -789,6 +809,7 @@ export async function rejectSchoolApplicationAction(input: {
     }).where(eq(schoolRegistrationApplication.id, input.applicationId))
 
     revalidatePath('/dashboard/super-admin/overview')
+    revalidatePath('/dashboard/super-admin/applications')
     return { success: true }
   } catch (error: any) {
     console.error('Failed to reject school application:', { requestId, error: error?.message || error })
