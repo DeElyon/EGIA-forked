@@ -100,7 +100,7 @@ export default function MakePaymentPage() {
       window.location.assign(result.checkoutUrl)
     } catch (err) {
       console.error(err)
-      setCheckoutError(err instanceof Error ? err.message : 'Paystack checkout could not be initialized.')
+      setCheckoutError(err instanceof Error ? err.message : 'Payment could not be initialized.')
       setCheckoutStatus('failed')
     } finally {
       setIsUploading(false)
@@ -120,7 +120,7 @@ export default function MakePaymentPage() {
                 {checkoutStatus === 'processing' ? 'Secure checkout' : 'Checkout could not start'}
               </p>
               <h2 id="checkout-status-title" className="mt-2 text-2xl font-black text-slate-900">
-                {checkoutStatus === 'processing' ? 'Connecting to Paystack' : 'Payment not started'}
+                {checkoutStatus === 'processing' ? 'Preparing secure payment' : 'Payment not started'}
               </h2>
               <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
                 {checkoutStatus === 'processing'
@@ -211,7 +211,7 @@ export default function MakePaymentPage() {
                     <CreditCard size={32} />
                   </div>
                   <div>
-                    <p className="font-black text-slate-900">Instant Online Paystack Checkout</p>
+                    <p className="font-black text-slate-900">Instant Online Payment</p>
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Card/USSD/Transfer</p>
                   </div>
                   <CheckCircle2 className="ml-auto text-emerald-600 w-6 h-6" />
@@ -252,7 +252,7 @@ export default function MakePaymentPage() {
                   </Button>
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 font-black uppercase tracking-widest justify-center">
                     <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                    Secured by Paystack & SSL
+                    Secured online with SSL encryption
                   </div>
                 </CardFooter>
               </Card>

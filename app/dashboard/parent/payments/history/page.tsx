@@ -19,6 +19,7 @@ import {
   Printer
 } from 'lucide-react'
 import { getParentPaymentHistory } from '@/app/actions/payments'
+import { getPaymentMethodLabel } from '@/lib/payments/display'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { downloadCsv } from '@/lib/download-csv'
 
@@ -79,7 +80,7 @@ export default function PaymentHistoryPage() {
       p.feeType,
       p.amount,
       p.status,
-      p.paymentMethod,
+      getPaymentMethodLabel(p.paymentMethod),
     ]),
   ])
 
@@ -125,8 +126,8 @@ export default function PaymentHistoryPage() {
                   <span className="font-bold text-slate-900">{new Date(activeReceipt.paidAt || activeReceipt.createdAt || Date.now()).toLocaleDateString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Payment Gateway:</span>
-                  <span className="font-bold text-emerald-600 flex items-center gap-1 text-xs"><ShieldCheck className="w-3.5 h-3.5" /> {activeReceipt.paymentMethod || 'Payment confirmed'}</span>
+                  <span className="text-slate-400">Payment Method:</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1 text-xs"><ShieldCheck className="w-3.5 h-3.5" /> {getPaymentMethodLabel(activeReceipt.paymentMethod)}</span>
                 </div>
                 <div className="h-[1px] bg-slate-100 my-4" />
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">

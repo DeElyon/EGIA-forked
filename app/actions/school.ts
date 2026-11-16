@@ -211,7 +211,7 @@ export async function retrySchoolRegistrationPaymentAction(applicationId: string
 
     return { success: true, paymentReference: initRes.reference, checkoutUrl: initRes.checkoutUrl }
   } catch {
-    return { success: false, error: 'Paystack checkout could not be started. Please try again.' }
+    return { success: false, error: 'Payment could not be started. Please try again.' }
   }
 }
 
@@ -420,7 +420,7 @@ export async function confirmSchoolPaymentAction(paymentReference: string) {
     })
 
     if (!verification.success) {
-      return { success: false, error: verification.error || 'Payment status not confirmed by gateway.' }
+      return { success: false, error: verification.error || 'Payment status has not been confirmed.' }
     }
 
     const existingSchool = await db.select().from(school).where(eq(school.paymentReference, paymentReference))

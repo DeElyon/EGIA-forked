@@ -185,14 +185,14 @@ export async function createStudent(data: any) {
     ? await db.query.user.findFirst({ where: eq(userTable.id, linkedParent.userId) })
     : null
   const customerEmail = actorRole === 'PARENT' ? session.user.email : linkedParentUser?.email
-  if (!customerEmail) throw new Error('A valid parent account email is required to start Paystack checkout.')
+  if (!customerEmail) throw new Error('A valid parent account email is required to start payment.')
   const initResult = await initializePaystackPayment({
     reference: registrationReference,
     amount: STUDENT_REGISTRATION_FEE + PAYSTACK_GATEWAY_FEE,
     currency: 'NGN',
     customerName: studentFullName,
     customerEmail,
-    description: `Student registration fee for ${studentFullName} (₦${STUDENT_REGISTRATION_FEE.toFixed(2)} plus Paystack fee ₦${PAYSTACK_GATEWAY_FEE.toFixed(2)})`,
+    description: `Student registration fee for ${studentFullName} (₦${STUDENT_REGISTRATION_FEE.toFixed(2)} plus payment processing fee ₦${PAYSTACK_GATEWAY_FEE.toFixed(2)})`,
     redirectUrl: `${(process.env.NEXT_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '')}/payment/return?reference=${encodeURIComponent(registrationReference)}`,
     schoolId: newStudent.schoolId,
     studentId: newStudent.id,
@@ -255,7 +255,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
     if (!existingPayment) throw new Error('Payment record not found or tenant mismatch.')
     if (existingPayment.status !== 'pending') throw new Error('Only pending payments can be reviewed.')
     if (['PAYSTACK', 'KORAPAY'].includes(existingPayment.paymentMethod.toUpperCase())) {
-      throw new Error('Gateway payments must be confirmed by Paystack verification.')
+      throw new Error('Online payments must be confirmed before reconciliation.')
     }
 
     const result = await tx.update(payment)
@@ -272,7 +272,7 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
       ))
       .returning()
 
-    if (!result[0]) throw new Error('Payment is no longer pending or requires gateway verification.')
+    if (!result[0]) throw new Error('Payment is no longer pending or requires payment confirmation.')
 
     if (result[0]?.feeType === 'registration' && status === 'success') {
       await tx.update(student)

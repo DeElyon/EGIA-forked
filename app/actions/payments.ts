@@ -740,7 +740,7 @@ export async function initializePaystackPayment(data: { studentId: string; amoun
   }
   const totalAmount = Number((baseAmount + PAYSTACK_GATEWAY_FEE).toFixed(2))
 
-  const paymentConfirmationMessage = `Payment of ₦${baseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} for ${approvedFee.feeType.toUpperCase()} (${child.firstName} ${child.lastName}, Class: ${child.class}) + Paystack Gateway Fee (₦161.25)`
+  const paymentConfirmationMessage = `Payment of ₦${baseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} for ${approvedFee.feeType.toUpperCase()} (${child.firstName} ${child.lastName}, Class: ${child.class}) + Payment Processing Fee (₦161.25)`
 
   const paymentRes = await serviceInitializePaystackPayment({
     schoolId: child.schoolId || undefined,
@@ -793,7 +793,7 @@ export async function initializeStudentRegistrationPayment(studentId: string) {
     parentId: child.parentId || undefined,
     amount: totalAmount,
     feeType: 'registration',
-    description: `Session registration for ${child.firstName} ${child.lastName} (NGN 2000 + NGN 161.25 gateway fee)`,
+    description: `Session registration for ${child.firstName} ${child.lastName} (NGN 2000 + NGN 161.25 payment processing fee)`,
     customerEmail,
     customerName: `${child.firstName} ${child.lastName}`,
     metadata: {

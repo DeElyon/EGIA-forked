@@ -4,11 +4,12 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "EL LEARNERS Portal",
     short_name: "EL LEARNERS",
-    description: "Complete school management system with CBT, assessments, and child monitoring.",
+    description: "Complete school management system with CBT, assessments, and real-time monitoring.",
+    id: "/",
     start_url: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#f97316",
+    background_color: "#0f172a",
+    theme_color: "#1d4ed8",
     icons: [
       {
         src: "/apple-icon.png",
@@ -19,8 +20,9 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/icon.svg",
         sizes: "any",
         type: "image/svg+xml",
-        purpose: 'maskable'
+        purpose: 'any maskable'
       }
-    ]
+    ],
+    categories: ["education", "productivity"]
   }
 }

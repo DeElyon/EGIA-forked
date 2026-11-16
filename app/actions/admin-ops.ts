@@ -436,7 +436,7 @@ export async function reconcilePaymentAction(paymentId: string, status: 'RECONCI
   })
   if (!paymentRecord) throw new Error('Payment record not found')
   if (['PAYSTACK', 'KORAPAY'].includes(paymentRecord.paymentMethod.toUpperCase())) {
-    throw new Error('Gateway payments must be reconciled against Paystack verification.')
+    throw new Error('Online payments must be confirmed before reconciliation.')
   }
   if (paymentRecord.status !== 'pending') throw new Error('Only pending manual payments can be reconciled.')
 

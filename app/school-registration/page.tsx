@@ -77,11 +77,12 @@ export default function SchoolRegistrationPage() {
   const [rotateY, setRotateY] = useState(0)
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (window.matchMedia('(hover: none), (prefers-reduced-motion: reduce)').matches) return
     const card = e.currentTarget.getBoundingClientRect()
     const cardX = e.clientX - card.left - card.width / 2
     const cardY = e.clientY - card.top - card.height / 2
-    setRotateX(-cardY / 50)
-    setRotateY(cardX / 50)
+    setRotateX(Math.max(-4, Math.min(4, -cardY / 100)))
+    setRotateY(Math.max(-4, Math.min(4, cardX / 100)))
   }
 
   const handleMouseLeave = () => {
@@ -171,7 +172,7 @@ export default function SchoolRegistrationPage() {
         approvalStatus: 'PENDING_REVIEW',
       })
       if (res.paymentInitializationFailed) {
-        setErrorMessage('Your application was saved, but Paystack is temporarily unavailable. Use Retry Paystack setup below.')
+        setErrorMessage('Your application was saved, but online payment is temporarily unavailable. Please try again below.')
       } else {
         setSuccessMessage('School application submitted! Please complete subscription payment and upload proof of address.')
       }
@@ -209,9 +210,9 @@ export default function SchoolRegistrationPage() {
     const result = await retrySchoolRegistrationPaymentAction(appState.applicationId)
     if (result.success) {
       setAppState((prev) => prev ? ({ ...prev, paymentReference: result.paymentReference, checkoutUrl: result.checkoutUrl }) : prev)
-      setSuccessMessage('Paystack checkout is ready. Complete payment to continue.')
+      setSuccessMessage('Secure payment is ready. Complete payment to continue.')
     } else {
-      setErrorMessage(result.error || 'Paystack checkout could not be started.')
+      setErrorMessage(result.error || 'Payment could not be started.')
     }
     setLoading(false)
   }
@@ -279,16 +280,16 @@ export default function SchoolRegistrationPage() {
         <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-600/20 rounded-full blur-3xl animate-pulse"></div>
       </div>
 
-      <header className="relative max-w-5xl mx-auto w-full flex items-center justify-between py-4 border-b border-slate-800 z-10">
-        <div className="flex items-center gap-3">
+      <header className="relative mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 border-b border-slate-800 py-4 z-10">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md shadow-lg">
             <GraduationCap className="w-6 h-6 text-white" />
           </div>
-          <span className="font-black text-xl tracking-tight text-white uppercase">
+          <span className="truncate font-black text-base tracking-tight text-white uppercase sm:text-xl">
             EL <span className="text-blue-400">LEARNERS APP</span>
           </span>
         </div>
-        <a href="/auth/signin" className="text-xs font-black text-blue-400 hover:text-blue-300 uppercase tracking-wider transition bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+        <a href="/auth/signin" className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-blue-400 transition hover:text-blue-300 sm:px-4 sm:text-xs">
           Already registered? Sign In
         </a>
       </header>
@@ -298,9 +299,8 @@ export default function SchoolRegistrationPage() {
         onMouseLeave={handleMouseLeave}
         style={{
           transform: `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`,
-          transition: 'transform 0.15s ease-out'
         }}
-        className="relative max-w-4xl mx-auto w-full my-8 bg-white/10 backdrop-blur-3xl border border-white/20 rounded-[2.5rem] p-6 sm:p-10 shadow-[0_30px_100px_rgba(0,0,0,0.6)] z-10"
+        className="relative z-10 mx-auto my-6 w-full max-w-4xl rounded-[2rem] border border-white/20 bg-white/10 p-5 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-transform duration-150 ease-out motion-reduce:transition-none sm:my-8 sm:rounded-[2.5rem] sm:p-10"
       >
         <div className="mb-8 text-center sm:text-left space-y-2">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-black uppercase tracking-widest">
@@ -310,7 +310,7 @@ export default function SchoolRegistrationPage() {
             Register Your School Application
           </h1>
           <p className="text-slate-400 text-xs sm:text-sm font-bold leading-relaxed">
-            Submit your school onboarding application. Complete subscription payment via Paystack and upload proof of school address (e.g. recent electricity bill) for Super-Admin verification and account activation.
+            Submit your school onboarding application. Complete the subscription payment and upload proof of school address (e.g. recent electricity bill) for Super-Admin verification and account activation.
           </p>
         </div>
 
@@ -446,7 +446,7 @@ export default function SchoolRegistrationPage() {
                 <div>
                   <h3 className="text-lg font-black text-white">1. Complete Subscription Payment (NGN 30,161.25)</h3>
                   <p className="text-slate-400 text-xs mt-1">
-                    Pay via Paystack checkout link to update your application payment status.
+                    Complete the secure online payment to update your application payment status.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
@@ -457,12 +457,12 @@ export default function SchoolRegistrationPage() {
                       rel="noreferrer"
                       className="flex-1 py-3 px-4 rounded-xl bg-[#1E3A8A] hover:bg-blue-800 text-white font-black text-xs uppercase flex items-center justify-center gap-2 transition"
                     >
-                      <span>Paystack Checkout</span>
+                      <span>Continue to Payment</span>
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   ) : (
                     <button onClick={handleRetryPayment} disabled={loading} className="flex-1 py-3 px-4 rounded-xl bg-[#1E3A8A] hover:bg-blue-800 text-white font-black text-xs uppercase disabled:opacity-50">
-                      {loading ? 'Starting…' : 'Retry Paystack Setup'}
+                      {loading ? 'Starting…' : 'Retry Payment'}
                     </button>
                   )}
                   <button
@@ -845,7 +845,7 @@ export default function SchoolRegistrationPage() {
                 </div>
               </div>
               <span className="text-[10px] font-black px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 uppercase">
-                Paystack Checkout
+                Online Payment
               </span>
             </div>
 
@@ -869,7 +869,7 @@ export default function SchoolRegistrationPage() {
       </main>
 
       <footer className="relative max-w-5xl mx-auto w-full text-center py-4 border-t border-slate-800 text-[10px] font-black text-slate-500 uppercase tracking-widest z-10">
-        &copy; {new Date().getFullYear()} EL LEARNERS APP • Institutional Gateway
+        &copy; {new Date().getFullYear()} EL LEARNERS APP • School Registration
       </footer>
     </div>
   )

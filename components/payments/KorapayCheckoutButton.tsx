@@ -70,7 +70,7 @@ export function KorapayCheckoutButton({
         onSuccess(data.reference)
       }
 
-      // Redirect user to Korapay hosted checkout page
+      // Redirect the user to the secure hosted checkout.
       window.location.href = data.checkoutUrl
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'An unexpected error occurred during payment initialization.'
@@ -102,12 +102,12 @@ export function KorapayCheckoutButton({
         {loading ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Redirecting to Korapay Checkout…</span>
+            <span>Redirecting to secure payment…</span>
           </>
         ) : (
           <>
             <CreditCard className="w-4 h-4" />
-            <span>{buttonText || `Pay ${formattedAmount} via Korapay`}</span>
+            <span>{buttonText || `Pay ${formattedAmount} online`}</span>
           </>
         )}
       </button>

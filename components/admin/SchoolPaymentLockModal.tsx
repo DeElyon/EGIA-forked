@@ -66,7 +66,7 @@ export function SchoolPaymentLockModal({
         setCurrentStatus('FAILED')
         setVerificationResult({
           status: 'error',
-          message: 'Paystack did not confirm the payment. You can retry securely below.',
+          message: 'Payment was not confirmed. You can retry securely below.',
         })
       } else if (row.paymentstatus === 'PENDING') {
         setCurrentStatus('PENDING')
@@ -94,7 +94,7 @@ export function SchoolPaymentLockModal({
     } catch (error) {
       setVerificationResult({
         status: 'error',
-        message: error instanceof Error ? error.message : 'Paystack checkout could not be started.',
+        message: error instanceof Error ? error.message : 'Payment could not be started.',
       })
     } finally {
       setLoading(false)
@@ -129,7 +129,7 @@ export function SchoolPaymentLockModal({
       } else {
         setVerificationResult({
           status: 'pending',
-          message: 'Payment is still pending. Please complete payment on Paystack and click verify again.',
+          message: 'Payment is still pending. Complete the payment and check again.',
         })
       }
     } catch (err: unknown) {
@@ -175,7 +175,7 @@ export function SchoolPaymentLockModal({
             <span className="font-bold text-white">NGN 30,000.00</span>
           </div>
           <div className="flex justify-between border-b border-slate-800 pb-1.5">
-            <span className="text-slate-400">Paystack Gateway Fee:</span>
+            <span className="text-slate-400">Payment Processing Fee:</span>
             <span className="font-bold text-white">NGN 161.25</span>
           </div>
           <div className="flex justify-between pt-1">
@@ -214,7 +214,7 @@ export function SchoolPaymentLockModal({
         )}
 
         <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-300 leading-relaxed text-left">
-          ⚠️ <strong>Note:</strong> This modal stays open until Paystack confirms payment in the database.
+          ⚠️ <strong>Note:</strong> This modal stays open until the payment is confirmed in the database.
         </div>
 
         <div className="flex flex-col gap-3 pt-2">
@@ -224,7 +224,7 @@ export function SchoolPaymentLockModal({
               disabled={loading}
               className="flex-1 py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider text-center shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Pay NGN 30,161.25 with Paystack</span>}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Pay NGN 30,161.25</span>}
               <ExternalLink className="w-4 h-4" />
             </button>
             <button

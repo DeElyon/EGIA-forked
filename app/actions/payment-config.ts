@@ -104,7 +104,7 @@ export async function saveSchoolPaymentConfigAction(data: {
 
   if (!data.usePaystack) {
     if (!data.bankName || !data.accountNumber || !data.accountName) {
-      throw new Error('Bank Name, Account Number, and Account Name are required when Paystack is disabled.')
+      throw new Error('Bank Name, Account Number, and Account Name are required when online payment is disabled.')
     }
   }
 

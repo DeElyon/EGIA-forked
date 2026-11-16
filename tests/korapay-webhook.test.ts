@@ -40,7 +40,7 @@ test('validatePaystackWebhook - rejects requests when the webhook secret is miss
   const result = validatePaystackWebhook(payloadNoRef, null, '')
   assert.equal(result.success, false)
   if (!result.success) {
-    assert.equal(result.error, 'Paystack webhook secret key is not configured')
+    assert.equal(result.error, 'Payment notification secret is not configured')
   }
 })
 

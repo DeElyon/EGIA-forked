@@ -63,7 +63,7 @@ export function validatePaystackWebhook(
     return { success: false, error: 'Webhook payload is too large' }
   }
   if (!secret) {
-    return { success: false, error: 'Paystack webhook secret key is not configured' }
+    return { success: false, error: 'Payment notification secret is not configured' }
   }
   if (!validPaystackSignature(rawBody, signature, secret)) {
     return { success: false, error: 'Invalid or missing webhook signature' }

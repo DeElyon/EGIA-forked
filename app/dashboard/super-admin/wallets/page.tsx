@@ -8,6 +8,7 @@ import { Wallet, RefreshCw, ArrowUpRight, ArrowDownLeft, Search, Download } from
 import { toast } from 'sonner'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { downloadCsv } from '@/lib/download-csv'
+import { getPaymentMethodLabel } from '@/lib/payments/display'
 
 type LedgerEntry = Awaited<ReturnType<typeof getTransactionLedger>>[number]
 type WalletPageData = {
@@ -56,7 +57,7 @@ export default function RealTimeWalletsLedgerPage() {
     item.gateway?.toLowerCase().includes(searchQuery.toLowerCase())
   )
   const downloadLedger = () => downloadCsv('platform-transaction-ledger.csv', [
-    ['Date', 'Type', 'Direction', 'Description', 'Amount', 'Status', 'Gateway', 'Reference'],
+    ['Date', 'Type', 'Direction', 'Description', 'Amount', 'Status', 'Payment Method', 'Reference'],
     ...filteredLedger.map((item) => [
       String(item.createdAt),
       item.type,
@@ -64,7 +65,7 @@ export default function RealTimeWalletsLedgerPage() {
       item.description,
       item.amount,
       item.status,
-      item.gateway,
+      getPaymentMethodLabel(item.gateway),
       item.reference,
     ]),
   ])
@@ -79,7 +80,7 @@ export default function RealTimeWalletsLedgerPage() {
             </div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">Real-Time Platform Wallets & Transaction Ledger</h1>
             <p className="text-slate-500 text-sm font-semibold mt-1">
-              Live financial tracking of money entering and leaving user wallets and school payment gateways in real time.
+              Live financial tracking of money entering and leaving user wallets and school payment channels in real time.
             </p>
           </div>
           <div className="flex gap-2">
@@ -119,7 +120,7 @@ export default function RealTimeWalletsLedgerPage() {
           <Search className="w-4 h-4 absolute left-4 top-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Search transaction ledger by description, reference, or gateway..."
+            placeholder="Search transaction ledger by description, reference, or payment method..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600 shadow-sm"
@@ -146,7 +147,7 @@ export default function RealTimeWalletsLedgerPage() {
                     <th className="p-4">Type</th>
                     <th className="p-4">Description</th>
                     <th className="p-4">Amount</th>
-                    <th className="p-4">Gateway / Ref</th>
+                    <th className="p-4">Payment Method / Ref</th>
                     <th className="p-4 text-right">Date</th>
                   </tr>
                 </thead>
@@ -163,7 +164,7 @@ export default function RealTimeWalletsLedgerPage() {
                       </td>
                       <td className="p-4 font-black text-slate-900">{tx.description}</td>
                       <td className="p-4 font-black text-slate-900">NGN {Number(tx.amount || 0).toLocaleString()}</td>
-                      <td className="p-4 text-slate-500 font-mono text-[10px]">{tx.gateway || 'KORAPAY'} • {tx.reference}</td>
+                      <td className="p-4 text-slate-500 font-mono text-[10px]">{getPaymentMethodLabel(tx.gateway)} • {tx.reference}</td>
                       <td className="p-4 text-right text-slate-400 text-[10px]">{new Date(tx.createdAt || Date.now()).toLocaleString()}</td>
                     </tr>
                   ))}

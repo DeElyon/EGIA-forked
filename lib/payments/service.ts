@@ -145,7 +145,7 @@ export async function createStudentPaymentRecord(params: {
 export async function initializePaystackPayment(params: InitializePaymentParams) {
   const secretKey = process.env.PAYSTACK_SECRET_KEY
   if (!secretKey) {
-    throw new Error('Paystack payment service is unavailable because its secret key is not configured.')
+    throw new Error('Online payment service is unavailable because its secret key is not configured.')
   }
 
   if (!Number.isFinite(params.amount) || params.amount <= 0 || Math.round(params.amount * 100) <= 0) {
@@ -162,17 +162,17 @@ export async function initializePaystackPayment(params: InitializePaymentParams)
   const currency = params.currency || 'NGN'
   const configuredSiteUrl = process.env.NEXT_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL
   if (process.env.NODE_ENV === 'production' && !configuredSiteUrl) {
-    throw new Error('NEXT_PUBLIC_SITE_URL must be configured for Paystack redirects in production.')
+    throw new Error('NEXT_PUBLIC_SITE_URL must be configured for payment redirects in production.')
   }
   const siteUrl = configuredSiteUrl || 'http://localhost:3000'
   const callbackUrl = params.callbackUrl || `${siteUrl.replace(/\/$/, '')}/payment/return`
   const redirectUrl = params.redirectUrl || callbackUrl
   try {
     if (new URL(redirectUrl).origin !== new URL(siteUrl).origin) {
-      throw new Error('Paystack callback URL must use the configured application origin.')
+      throw new Error('Payment callback URL must use the configured application origin.')
     }
   } catch {
-    throw new Error('A valid same-origin Paystack callback URL is required.')
+    throw new Error('A valid same-origin payment callback URL is required.')
   }
 
   // Create pending payment record in DB if studentId is provided
@@ -238,7 +238,7 @@ export async function initializePaystackPayment(params: InitializePaymentParams)
     const paystackData = await res.json()
 
     if (!res.ok || !paystackData.status || !paystackData.data?.authorization_url) {
-      throw new Error(paystackData.message || 'Paystack did not return a valid checkout URL.')
+      throw new Error('Payment could not be initialized. Please try again.')
     }
 
     checkoutUrl = paystackData.data.authorization_url
@@ -320,7 +320,7 @@ export async function verifyPaystackPayment(params: PaymentVerificationParams) {
   const schoolName = schoolRec?.name || appRec?.schoolName || undefined
 
   if (!secretKey) {
-    return { success: false, status: 'failed', schoolCode, schoolName, error: 'Paystack secret key is not configured.' }
+    return { success: false, status: 'failed', schoolCode, schoolName, error: 'Payment service is not configured.' }
   }
 
   const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
@@ -329,13 +329,13 @@ export async function verifyPaystackPayment(params: PaymentVerificationParams) {
   })
 
   if (!res.ok) {
-    const errText = await res.text()
-    return { success: false, status: 'failed', schoolCode, schoolName, error: `Verification request failed (${res.status}): ${errText}` }
+    console.warn('Payment verification request failed with status:', res.status)
+    return { success: false, status: 'failed', schoolCode, schoolName, error: 'Payment verification could not be completed. Please try again.' }
   }
 
   const json = await res.json()
   if (!json.status || !json.data) {
-    return { success: false, status: 'failed', schoolCode, schoolName, error: json.message || 'Invalid verification response from Paystack' }
+    return { success: false, status: 'failed', schoolCode, schoolName, error: 'Payment verification could not be completed.' }
   }
 
   const data = json.data
@@ -535,7 +535,7 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
     if (!isSuccess && !isFailed) {
       await recordEvent('IGNORED')
       await completeIdempotencyKey(idempotencyKey, { success: true, event, reference })
-      return { success: true, event, reference, note: 'Unsupported Paystack event ignored' }
+      return { success: true, event, reference, note: 'Unsupported payment notification ignored' }
     }
 
     const [learnAiPurchase] = await sqlClient`

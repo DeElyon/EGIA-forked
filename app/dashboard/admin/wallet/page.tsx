@@ -14,6 +14,7 @@ import { Wallet, ArrowUpRight, TrendingUp, Trophy, RefreshCw, Sparkles, Download
 import { toast } from 'sonner'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { downloadCsv } from '@/lib/download-csv'
+import { getPaymentMethodLabel } from '@/lib/payments/display'
 
 export default function AdminWalletPage() {
   const [loading, setLoading] = useState(true)
@@ -76,7 +77,7 @@ export default function AdminWalletPage() {
   useRealtimeSubscription('transaction_ledger', () => { fetchWallet() })
 
   const downloadHistory = () => downloadCsv('school-transaction-history.csv', [
-    ['Date', 'Direction', 'Type', 'Description', 'Amount', 'Status', 'Gateway', 'Reference'],
+    ['Date', 'Direction', 'Type', 'Description', 'Amount', 'Status', 'Payment Method', 'Reference'],
     ...(walletSummary?.recentTransactions || []).map((transaction) => [
       transaction.createdAt,
       transaction.direction,
@@ -84,7 +85,7 @@ export default function AdminWalletPage() {
       transaction.description,
       transaction.amount,
       transaction.status,
-      transaction.paymentMethod,
+      getPaymentMethodLabel(transaction.paymentMethod),
       transaction.transactionReference,
     ]),
   ])
@@ -273,7 +274,7 @@ export default function AdminWalletPage() {
               </div>
               <div>
                 <h2 className="text-xl font-black text-slate-900">Live Transaction History</h2>
-                <p className="text-xs text-slate-500 font-medium">Incoming and outgoing school-account and Paystack transactions</p>
+                <p className="text-xs text-slate-500 font-medium">Incoming and outgoing school-account and online payment transactions</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -296,7 +297,7 @@ export default function AdminWalletPage() {
                     <th className="py-3 px-4">Type / Description</th>
                     <th className="py-3 px-4">Direction</th>
                     <th className="py-3 px-4">Amount</th>
-                    <th className="py-3 px-4">Gateway / Status</th>
+                    <th className="py-3 px-4">Payment Method / Status</th>
                     <th className="py-3 px-4">Reference</th>
                     <th className="py-3 px-4">Date</th>
                   </tr>
@@ -310,7 +311,7 @@ export default function AdminWalletPage() {
                       </td>
                       <td className={`py-3.5 px-4 font-black ${tx.direction === 'OUT' ? 'text-rose-600' : 'text-emerald-700'}`}>{tx.direction === 'OUT' ? 'OUTGOING' : 'INCOMING'}</td>
                       <td className="py-3.5 px-4 font-black text-amber-700">₦{Number(tx.amount).toLocaleString()}</td>
-                      <td className="py-3.5 px-4">{tx.paymentMethod} / {tx.status}</td>
+                      <td className="py-3.5 px-4">{getPaymentMethodLabel(tx.paymentMethod)} / {tx.status}</td>
                       <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">{tx.transactionReference || 'N/A'}</td>
                       <td className="py-3.5 px-4 text-slate-500">{new Date(tx.createdAt).toLocaleDateString()}</td>
                     </tr>

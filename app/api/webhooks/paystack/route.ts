@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const signature = req.headers.get('x-paystack-signature')
 
     if (!signature) {
-      return NextResponse.json({ error: 'Missing Paystack signature header' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing payment signature header' }, { status: 400 })
     }
 
     const result = await processPaystackWebhook(rawBody, signature)
@@ -52,6 +52,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, ...result }, { status: 200 })
   } catch (error: any) {
     console.error('Paystack webhook error:', error)
-    return NextResponse.json({ error: 'Internal server error processing Paystack webhook' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error processing payment notification' }, { status: 500 })
   }
 }
