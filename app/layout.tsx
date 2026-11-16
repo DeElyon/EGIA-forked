@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { RealtimeProvider } from '@/components/realtime/RealtimeProvider'
@@ -7,6 +6,7 @@ import { FloatingSupportWidget } from '@/components/support/FloatingSupportWidge
 import { FloatingLearnAiWidget } from '@/components/learn-ai/FloatingLearnAiWidget'
 import { CookieConsentBanner } from '@/components/CookieConsentBanner'
 import { SessionInactivityGuard } from '@/components/auth/SessionInactivityGuard'
+import { ConsentAwareAnalytics } from '@/components/ConsentAwareAnalytics'
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_SITE_URL || 'https://el-goodnews-academy.com'
 
@@ -128,7 +128,7 @@ export default function RootLayout({
           <FloatingLearnAiWidget />
           <CookieConsentBanner />
         </RealtimeProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {process.env.NODE_ENV === 'production' && <ConsentAwareAnalytics />}
         {/* Simple inline PWA registration block */}
         <script
           dangerouslySetInnerHTML={{

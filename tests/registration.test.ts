@@ -9,6 +9,7 @@ test('School Registration - validates required input fields', async () => {
     adminName: '',
     adminPhone: '',
     adminEmail: '',
+    password: '',
     registeredClasses: ['Primary 3'],
     allowParents: true,
   })
