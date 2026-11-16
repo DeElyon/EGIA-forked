@@ -261,6 +261,10 @@ export async function signInAction(emailInput: string, passwordInput: string, lo
       })
     }
 
+    if (existingUser?.mustChangePassword && !userIsSuperAdmin) {
+      return { success: true, mustChangePassword: true as const }
+    }
+
     if (userIsSuperAdmin) {
       await db.insert(userRoleTable).values({
         id: crypto.randomUUID(),
@@ -408,6 +412,13 @@ export async function activateIdentityAction(identityId: string, remember: boole
 
   const userEmail = (user.email || '').trim().toLowerCase()
   const userIsSuperAdmin = await isSuperAdminUser(user.id) || await isSuperAdminEmail(userEmail)
+  const account = await db.query.user.findFirst({
+    where: eq(userTable.id, user.id),
+    columns: { mustChangePassword: true },
+  })
+  if (account?.mustChangePassword && !userIsSuperAdmin) {
+    return { success: true, redirectTo: '/auth/change-password' }
+  }
 
   const loginContext = await resolveIdentities(user.id, userEmail)
   let matchedIdentity = loginContext.identities.find((i) => i.id === identityId)

@@ -8,6 +8,8 @@ import { randomInt } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { sanitizeServerError } from '@/lib/errors'
 import { auth } from '@/lib/auth'
+import { sendSchoolRegistrationOtpOnce } from '@/lib/school-registration-otp'
+import { verifyOtp } from '@/lib/otp'
 import { canSchoolAdminAccess } from '@/lib/auth/school-admin-permissions'
 import {
   initializePaystackPayment as serviceInitializePaystackPayment,
@@ -28,8 +30,6 @@ export interface SchoolRegistrationInput {
   proofOfAddressFileUrl?: string
   logoUrl?: string
   logoPath?: string
-  password?: string
-  confirmPassword?: string
 }
 
 export async function generateSchoolCode(schoolName: string): Promise<string> {
@@ -52,15 +52,6 @@ export async function registerSchoolAction(input: SchoolRegistrationInput) {
   try {
     if (!input.name || !input.adminEmail || !input.adminName || !input.location) {
       return { success: false, error: 'School name, location, contact email, and applicant name are required.' }
-    }
-
-    if (input.password || input.confirmPassword) {
-      if ((input.password || '').length < 8) {
-        return { success: false, error: 'Password must be at least 8 characters long.' }
-      }
-      if (input.password !== input.confirmPassword) {
-        return { success: false, error: 'Passwords do not match.' }
-      }
     }
 
     const schoolId = randomUUID()
@@ -446,6 +437,14 @@ export async function confirmSchoolPaymentAction(paymentReference: string) {
       })
     }
 
+    let otpSent = false
+    try {
+      const delivery = await sendSchoolRegistrationOtpOnce(paymentReference)
+      otpSent = delivery.sent === true || delivery.alreadySent === true
+    } catch (error) {
+      console.error('School registration payment was confirmed, but OTP dispatch failed.', { requestId, error })
+    }
+
     return {
       success: true,
       schoolCode: rec?.code || verification.schoolCode,
@@ -454,10 +453,36 @@ export async function confirmSchoolPaymentAction(paymentReference: string) {
       paidAt: new Date().toISOString(),
       documentVerificationStatus: appRecord?.documentVerificationStatus || 'PENDING',
       approvalStatus: appRecord?.approvalStatus || 'PENDING_REVIEW',
+      otpSent,
     }
   } catch (error: any) {
     return sanitizeServerError('confirmSchoolPaymentAction', error, 'School registration payment confirmation failed.')
   }
+}
+
+export async function verifySchoolRegistrationOtpAction(applicationId: string, otp: string) {
+  if (!applicationId || applicationId.length > 80 || !/^\d{6}$/.test(otp)) {
+    return { success: false, error: 'Enter the 6-digit code sent to the school administrator email.' }
+  }
+  const application = await db.query.schoolRegistrationApplication.findFirst({
+    where: eq(schoolRegistrationApplication.id, applicationId),
+  })
+  if (!application || application.paymentStatus !== 'SUCCESS' || !application.paymentOtpSentAt) {
+    return { success: false, error: 'A paid school application with a sent verification code was not found.' }
+  }
+  const result = await verifyOtp(application.applicantEmail, otp)
+  if (!result.ok) return { success: false, error: result.reason }
+
+  const verifiedAt = new Date()
+  await db.update(schoolRegistrationApplication)
+    .set({ paymentOtpVerifiedAt: verifiedAt, updatedAt: verifiedAt })
+    .where(and(
+      eq(schoolRegistrationApplication.id, application.id),
+      eq(schoolRegistrationApplication.paymentStatus, 'SUCCESS'),
+    ))
+  revalidatePath('/school-registration')
+  revalidatePath('/dashboard/super-admin/applications')
+  return { success: true }
 }
 
 export async function getSchoolByCodeAction(code: string) {

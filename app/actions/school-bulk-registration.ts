@@ -17,6 +17,8 @@ import {
 } from '@/lib/db/schema'
 import { generateSequentialAdmissionNumber, generateSequentialStaffCode } from '@/lib/admission'
 import { calculateSchoolRegistrationTotal, SCHOOL_REGISTRATION_PROCESSING_FEE_NGN } from '@/lib/school-registration'
+import { generateTemporaryPassword } from '@/lib/onboarding-credentials'
+import { sendSchoolAccountEmail } from '@/lib/mailer'
 import { initializePaystackPayment } from '@/lib/payments/service'
 import { getSupabaseSecretKey, getSupabaseUrl } from '@/utils/supabase/config'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
@@ -44,7 +46,6 @@ const studentInput = z.object({
   lastName: z.string().trim().min(2).max(50),
   gender: genderField,
   email: emailField,
-  password: z.string().min(8).max(128),
   class: z.enum(['Primary 3', 'Primary 4', 'Primary 5', 'Primary 6', 'Basic 5', 'Basic 6', 'JSS1', 'JSS2', 'JSS3', 'SSS1', 'SSS2', 'SSS3']),
   department: z.string().trim().max(80).optional().default(''),
   dateOfBirth: dateField,
@@ -62,7 +63,6 @@ const teacherInput = z.object({
   lastName: z.string().trim().min(2).max(50),
   gender: genderField,
   email: emailField,
-  password: z.string().min(8).max(128),
   phoneNumber: z.string().trim().min(10).max(20),
   type: z.enum(['FULL_TIME', 'PART_TIME']).default('FULL_TIME'),
   resumptionDate: dateField.optional(),
@@ -87,7 +87,6 @@ const parentInput = z.object({
   lastName: z.string().trim().min(2).max(50),
   gender: genderField,
   email: emailField,
-  password: z.string().min(8).max(128),
   phoneNumber: z.string().trim().min(10).max(20),
   occupation: z.string().trim().min(1).max(100),
   address: z.string().trim().max(250).optional().default(''),
@@ -96,12 +95,20 @@ const parentInput = z.object({
   wardAdmissionNumbers: z.array(z.string().trim().min(1).max(40)).max(5).default([]),
 })
 
+const adminInput = z.object({
+  firstName: z.string().trim().min(2).max(50),
+  lastName: z.string().trim().min(2).max(50),
+  email: emailField,
+  adminLevel: z.enum(['VICE_PRINCIPAL_ACADEMICS', 'VICE_PRINCIPAL_ADMIN', 'HOD_SCIENCE', 'HOD_ARTS', 'HOD_COMMERCIAL']),
+})
+
 const bulkInput = z.object({
   students: z.array(studentInput).max(MAX_BULK_RECORDS).default([]),
   teachers: z.array(teacherInput).max(MAX_BULK_RECORDS).default([]),
   parents: z.array(parentInput).max(MAX_BULK_RECORDS).default([]),
+  admins: z.array(adminInput).max(MAX_BULK_RECORDS).default([]),
 }).superRefine((value, context) => {
-  const total = value.students.length + value.teachers.length + value.parents.length
+  const total = value.students.length + value.teachers.length + value.parents.length + value.admins.length
   if (!total || total > MAX_BULK_RECORDS) {
     context.addIssue({ code: 'custom', message: `Add between 1 and ${MAX_BULK_RECORDS} total records.` })
   }
@@ -109,6 +116,7 @@ const bulkInput = z.object({
     ...value.students.map((record) => record.email),
     ...value.teachers.map((record) => record.email),
     ...value.parents.map((record) => record.email),
+    ...value.admins.map((record) => record.email),
   ]
   if (new Set(emails).size !== emails.length) {
     context.addIssue({ code: 'custom', message: 'Each record must use a unique email address.' })
@@ -116,7 +124,16 @@ const bulkInput = z.object({
 })
 
 type BulkInput = z.infer<typeof bulkInput>
-type ProvisionedUser = { id: string; email: string; password: string; name: string; role: string; schoolId: string }
+type ProvisionedUser = {
+  id: string
+  email: string
+  password: string
+  name: string
+  role: string
+  schoolId: string
+  accountIdentifier?: string
+  adminLevel?: string
+}
 
 async function getSchoolAdminContext() {
   const session = await auth.getSession()
@@ -166,7 +183,9 @@ async function createAuthUsers(records: ProvisionedUser[]) {
           full_name: record.name,
           role: record.role,
           school_id: record.schoolId,
+          must_change_password: true,
         },
+        app_metadata: { must_change_password: true },
       })
       if (error || !data.user?.id) {
         throw new Error(error?.message || `Could not create an account for ${record.email}.`)
@@ -229,6 +248,9 @@ export async function registerSchoolMembersInBulk(input: unknown) {
   const records: BulkInput = parsed.data
   const { user: actor, school: schoolRecord } = await getSchoolAdminContext()
   const schoolId = schoolRecord.id
+  if (records.admins.length && actor.role.toUpperCase() === 'SCHOOL_ADMIN' && actor.adminLevel !== 'PRIMARY_ADMIN') {
+    throw new Error('Only the Primary Administrator can register additional school administrators.')
+  }
 
   if (actor.role.toUpperCase() === 'SCHOOL_ADMIN' && actor.adminLevel?.startsWith('HOD_')) {
     for (const item of records.students) assertDepartmentAccess(actor, item.department)
@@ -239,6 +261,7 @@ export async function registerSchoolMembersInBulk(input: unknown) {
     ...records.students.map((item) => item.email),
     ...records.teachers.map((item) => item.email),
     ...records.parents.map((item) => item.email),
+    ...records.admins.map((item) => item.email),
   ]
   const existingUsers = await db.select({ email: userTable.email }).from(userTable).where(inArray(userTable.email, emails))
   if (existingUsers.length) throw new Error(`An account already exists for ${existingUsers[0].email}.`)
@@ -297,6 +320,7 @@ export async function registerSchoolMembersInBulk(input: unknown) {
     const admission = studentRow.admissionNumber.toUpperCase()
     const parentEmail = studentRow.item.parentEmail
     const ownerEmail = wardOwner.get(admission)
+    if (!parentEmail) throw new Error(`Choose a parent account for student admission number ${studentRow.admissionNumber}.`)
     if (parentEmail && !parentIdByEmail.has(parentEmail) && !teacherParentIdByEmail.has(parentEmail)) {
       throw new Error(`No bulk parent record was provided for ${parentEmail}.`)
     }
@@ -304,18 +328,37 @@ export async function registerSchoolMembersInBulk(input: unknown) {
     if (parentEmail) wardOwner.set(admission, parentEmail)
   }
 
+  const linkedParentEmails = new Set(wardOwner.values())
+  for (const parentRow of parentRows) {
+    if (!linkedParentEmails.has(parentRow.item.email)) {
+      throw new Error(`Link at least one ward to parent account ${parentRow.item.email}.`)
+    }
+  }
+  for (const teacherRow of teacherRows.filter(({ item }) => item.isAlsoParent)) {
+    if (teacherRow.item.wardAdmissionNumber && !linkedParentEmails.has(teacherRow.item.email)) {
+      throw new Error(`Ward ${teacherRow.item.wardAdmissionNumber} could not be linked to ${teacherRow.item.email}.`)
+    }
+  }
+
+  const adminRows = records.admins.map((item) => ({ item, id: randomUUID(), userId: randomUUID() }))
+  const usedPasswordCodes = new Set<string>()
   const provisioned: ProvisionedUser[] = [
-    ...studentRows.map(({ item, userId }) => ({
-      id: userId, email: item.email, password: item.password,
-      name: `${item.firstName} ${item.lastName}`, role: 'STUDENT', schoolId,
+    ...studentRows.map(({ item, userId, admissionNumber }) => ({
+      id: userId, email: item.email, password: generateTemporaryPassword(usedPasswordCodes),
+      name: `${item.firstName} ${item.lastName}`, role: 'STUDENT', schoolId, accountIdentifier: admissionNumber,
     })),
-    ...teacherRows.map(({ item, userId }) => ({
-      id: userId, email: item.email, password: item.password,
-      name: `${item.firstName} ${item.lastName}`, role: 'TEACHER', schoolId,
+    ...teacherRows.map(({ item, userId, staffCode }) => ({
+      id: userId, email: item.email, password: generateTemporaryPassword(usedPasswordCodes),
+      name: `${item.firstName} ${item.lastName}`, role: 'TEACHER', schoolId, accountIdentifier: staffCode,
     })),
     ...parentRows.map(({ item, userId }) => ({
-      id: userId, email: item.email, password: item.password,
+      id: userId, email: item.email, password: generateTemporaryPassword(usedPasswordCodes),
       name: `${item.firstName} ${item.lastName}`, role: 'PARENT', schoolId,
+    })),
+    ...adminRows.map(({ item, userId }) => ({
+      id: userId, email: item.email, password: generateTemporaryPassword(usedPasswordCodes),
+      name: `${item.firstName} ${item.lastName}`, role: 'SCHOOL_ADMIN', schoolId,
+      adminLevel: item.adminLevel, accountIdentifier: item.adminLevel.replaceAll('_', ' '),
     })),
   ]
   const { admin: supabaseAdmin, created: authUserIds } = await createAuthUsers(provisioned)
@@ -331,6 +374,8 @@ export async function registerSchoolMembersInBulk(input: unknown) {
         email: account.email,
         name: account.name,
         schoolId,
+        adminLevel: account.adminLevel || null,
+        mustChangePassword: true,
         lastIdentityAt: now,
       }))
       await tx.insert(userTable).values(dbUsers)
@@ -339,8 +384,22 @@ export async function registerSchoolMembersInBulk(input: unknown) {
         ...teacherRows.map(({ userId }) => ({ id: randomUUID(), userId, role: 'TEACHER' })),
         ...parentRows.map(({ userId }) => ({ id: randomUUID(), userId, role: 'PARENT' })),
         ...teacherRows.filter(({ item }) => item.isAlsoParent).map(({ userId }) => ({ id: randomUUID(), userId, role: 'PARENT' })),
+        ...adminRows.map(({ userId }) => ({ id: randomUUID(), userId, role: 'SCHOOL_ADMIN' })),
       ]
       await tx.insert(userRole).values(roleRecords)
+      if (adminRows.length) {
+        await tx.insert(schoolAdminRoles).values(adminRows.map(({ item, userId }) => ({
+          id: randomUUID(),
+          schoolId,
+          userId,
+          level: item.adminLevel,
+          department: item.adminLevel.startsWith('HOD_') ? item.adminLevel.slice(4) : null,
+          isActive: true,
+          approvedBy: actor.id,
+          approvedAt: now,
+          createdAt: now,
+        })))
+      }
 
       const parentsToInsert = [
         ...parentRows.map(({ item, id, userId }) => ({
@@ -425,6 +484,24 @@ export async function registerSchoolMembersInBulk(input: unknown) {
     throw error
   }
 
+  const emailResults = await Promise.allSettled(provisioned.map((account) => sendSchoolAccountEmail({
+    to: account.email,
+    name: account.name,
+    role: account.role === 'SCHOOL_ADMIN' ? account.adminLevel?.replaceAll('_', ' ') || 'School Administrator' : account.role,
+    schoolName: schoolRecord.name,
+    schoolLogoUrl: schoolRecord.logoUrl,
+    accountIdentifier: account.accountIdentifier,
+    temporaryPassword: account.password,
+  })))
+  const emailDeliveryFailures = emailResults.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return []
+    console.error('School member onboarding email could not be delivered.', {
+      recipient: provisioned[index].email,
+      error: result.reason,
+    })
+    return [provisioned[index].email]
+  })
+
   const checkoutUrl = studentRows.length
     ? await startBatchCheckout(
       batchId, paymentReference, actor.email || '', actor.name || schoolRecord.adminName,
@@ -435,6 +512,7 @@ export async function registerSchoolMembersInBulk(input: unknown) {
   revalidatePath('/dashboard/admin/users/students/list')
   revalidatePath('/dashboard/admin/users/teachers/list')
   revalidatePath('/dashboard/admin/users/parents/list')
+  revalidatePath('/dashboard/admin/users/admins/list')
 
   return {
     success: true,
@@ -444,6 +522,8 @@ export async function registerSchoolMembersInBulk(input: unknown) {
     studentCount: studentRows.length,
     teacherCount: teacherRows.length,
     parentCount: parentRows.length + teacherRows.filter(({ item }) => item.isAlsoParent).length,
+    adminCount: adminRows.length,
+    emailDeliveryFailures,
     admissionNumbers: studentRows.map(({ admissionNumber }) => admissionNumber),
     staffCodes: teacherRows.map(({ staffCode }) => staffCode),
     totalAmount,

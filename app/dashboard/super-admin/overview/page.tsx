@@ -247,7 +247,9 @@ export default function SuperAdminOverviewPage() {
     if (!confirm('Activate school admin identity and send setup invitation link?')) return
     const res = await activateSchoolAdminAction(applicationId)
     if (res.success) {
-      toast.success('School Admin activated and password setup/invitation issued!')
+      toast.success(res.approvalEmailSent
+        ? 'School Admin activated and approval email sent.'
+        : 'School Admin activated, but the approval email could not be delivered.')
       loadData()
     } else {
       toast.error('error' in res && res.error ? res.error : 'Failed to activate School Admin.')

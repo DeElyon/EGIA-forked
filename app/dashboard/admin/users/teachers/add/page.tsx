@@ -50,7 +50,9 @@ export default function AddTeacherPage() {
     setLoading(true)
     try {
       const teacher = await createTeacher(formData)
-      alert(`Teacher account created successfully! Staff ID: ${teacher.staffCode || 'pending'}`)
+      alert(teacher.emailDeliveryFailed
+        ? `Teacher account created, but the welcome email could not be delivered. Contact support. Staff ID: ${teacher.staffCode || 'pending'}`
+        : `Teacher account created and welcome email sent. Staff ID: ${teacher.staffCode || 'pending'}`)
       router.push('/dashboard/admin/users/teachers/list')
     } catch (error: any) {
       console.error(error)
