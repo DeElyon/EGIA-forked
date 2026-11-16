@@ -17,6 +17,7 @@ import {
   feeStructure,
   schoolAdminRoles,
   school,
+  transactionLedger,
 } from '@/lib/db/schema'
 import { eq, sql, and, count, notInArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
@@ -277,6 +278,28 @@ export async function verifyPayment(paymentId: string, status: 'success' | 'fail
       await tx.update(student)
         .set({ registrationStatus: 'ACTIVE', updatedAt: new Date() })
         .where(and(eq(student.id, result[0].studentId), eq(student.schoolId, schoolId)))
+    }
+    if (result[0].transactionReference) {
+      await tx.insert(transactionLedger).values({
+        id: randomUUID(),
+        schoolId,
+        studentId: result[0].studentId,
+        type: result[0].feeType?.toLowerCase().includes('registration') ? 'REGISTRATION_FEE' : 'FEE_PAYMENT',
+        direction: 'IN',
+        amount: result[0].amount,
+        currency: 'NGN',
+        reference: result[0].transactionReference,
+        gateway: 'SCHOOL_ACCOUNT',
+        status: status === 'success' ? 'SUCCESS' : 'FAILED',
+        description: result[0].description,
+        confirmationMethod: 'SCHOOL_ACCOUNT',
+        metadata: { paymentId: result[0].id, feeType: result[0].feeType },
+        createdAt: result[0].createdAt,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: transactionLedger.reference,
+        set: { status: status === 'success' ? 'SUCCESS' : 'FAILED', updatedAt: new Date() },
+      })
     }
 
     revalidatePath('/dashboard/admin/finance/fees/pending')

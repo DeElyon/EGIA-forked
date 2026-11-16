@@ -25,6 +25,7 @@ import {
 import { getAllPaymentsWithStudents, verifyPayment } from '@/app/actions/admin'
 import { getManualPaymentOptions, recordManualSchoolPayment } from '@/app/actions/payments'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
+import { downloadCsv } from '@/lib/download-csv'
 
 type PaymentLedger = Awaited<ReturnType<typeof getAllPaymentsWithStudents>>
 type PaymentRow = PaymentLedger['payments'][number]
@@ -162,6 +163,20 @@ export default function AdminPaymentsPage() {
 
     return matchesSearch && matchesStatus
   })
+
+  const downloadLedger = () => downloadCsv('school-payment-ledger.csv', [
+    ['Date', 'Reference', 'Student', 'Admission Number', 'Fee', 'Amount', 'Status', 'Payment Method'],
+    ...filteredPayments.map((p) => [
+      String(p.paidAt || p.paymentDate || p.createdAt),
+      p.transactionReference || p.id,
+      `${p.student?.firstName || ''} ${p.student?.lastName || ''}`.trim(),
+      p.student?.admissionNumber,
+      p.feeType,
+      p.amount,
+      p.status,
+      p.paymentMethod,
+    ]),
+  ])
 
   // Calculate statistics
   const successPayments = payments.filter((p) => (p.status || '').toLowerCase() === 'success')
@@ -340,7 +355,7 @@ export default function AdminPaymentsPage() {
             </p>
           </div>
           <Button
-            onClick={() => window.print()}
+            onClick={downloadLedger}
             className="bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl h-12 px-6 flex items-center gap-2"
           >
             <FileSpreadsheet size={16} /> EXPORT LEDGER

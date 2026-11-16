@@ -3,20 +3,33 @@
 import React, { useEffect, useState } from 'react'
 import DashboardLayout from '@/components/layout/dashboard-layout'
 import { getSuperAdminOverviewStats } from '@/app/actions/super-admin'
-import { Wallet, RefreshCw, ArrowUpRight, ArrowDownLeft, Search } from 'lucide-react'
+import { getTransactionLedger } from '@/app/actions/admin-ops'
+import { Wallet, RefreshCw, ArrowUpRight, ArrowDownLeft, Search, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
+import { downloadCsv } from '@/lib/download-csv'
+
+type LedgerEntry = Awaited<ReturnType<typeof getTransactionLedger>>[number]
+type WalletPageData = {
+  ledger: LedgerEntry[]
+  totalRevenue?: number
+  totalSchools?: number
+  totalUsers?: number
+}
 
 export default function RealTimeWalletsLedgerPage() {
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<WalletPageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
   const loadData = async () => {
     setLoading(true)
-    const res = await getSuperAdminOverviewStats()
+    const [res, ledger] = await Promise.all([
+      getSuperAdminOverviewStats(),
+      getTransactionLedger(),
+    ])
     if (res.success) {
-      setData(res)
+      setData({ ...res, ledger })
     } else {
       toast.error('Failed to load transaction ledger')
     }
@@ -37,11 +50,24 @@ export default function RealTimeWalletsLedgerPage() {
   })
 
   const ledger = data?.ledger || []
-  const filteredLedger = ledger.filter((item: any) =>
+  const filteredLedger = ledger.filter((item) =>
     item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.reference?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.gateway?.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const downloadLedger = () => downloadCsv('platform-transaction-ledger.csv', [
+    ['Date', 'Type', 'Direction', 'Description', 'Amount', 'Status', 'Gateway', 'Reference'],
+    ...filteredLedger.map((item) => [
+      String(item.createdAt),
+      item.type,
+      item.direction,
+      item.description,
+      item.amount,
+      item.status,
+      item.gateway,
+      item.reference,
+    ]),
+  ])
 
   return (
     <DashboardLayout role="super-admin">
@@ -56,13 +82,22 @@ export default function RealTimeWalletsLedgerPage() {
               Live financial tracking of money entering and leaving user wallets and school payment gateways in real time.
             </p>
           </div>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs transition shadow-md"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={downloadLedger}
+              disabled={!filteredLedger.length}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition shadow-md disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" /> Download CSV
+            </button>
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs transition shadow-md"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -116,7 +151,7 @@ export default function RealTimeWalletsLedgerPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                  {filteredLedger.map((tx: any) => (
+                  {filteredLedger.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50/50 transition">
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold uppercase text-[10px] ${

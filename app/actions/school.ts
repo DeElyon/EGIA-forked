@@ -1,8 +1,8 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { school, schoolRegistrationApplication, transactions } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { school, schoolRegistrationApplication, transactions, transactionLedger, user as userTable, schoolAdminRoles } from '@/lib/db/schema'
+import { eq, and, inArray } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { sanitizeServerError } from '@/lib/errors'
@@ -212,6 +212,129 @@ export async function retrySchoolRegistrationPaymentAction(applicationId: string
     return { success: true, paymentReference: initRes.reference, checkoutUrl: initRes.checkoutUrl }
   } catch {
     return { success: false, error: 'Paystack checkout could not be started. Please try again.' }
+  }
+}
+
+export async function initializeSchoolRegistrationPaymentAction(schoolId: string) {
+  const session = await auth.getSession()
+  if (!session?.user) throw new Error('Sign in before starting the school registration payment.')
+
+  const actor = session.user
+  const role = actor.role.toUpperCase()
+  if (!['ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(role)) {
+    throw new Error('School administrator access is required.')
+  }
+  const [userRecord, adminRole] = await Promise.all([
+    db.query.user.findFirst({ where: eq(userTable.id, actor.id) }),
+    db.query.schoolAdminRoles.findFirst({
+      where: and(eq(schoolAdminRoles.userId, actor.id), eq(schoolAdminRoles.isActive, true)),
+    }),
+  ])
+  const actorSchoolId = actor.schoolId || userRecord?.schoolId || adminRole?.schoolId || null
+  const adminLevel = actor.adminLevel || adminRole?.level
+  const canManagePayment = role === 'SUPER_ADMIN' || role === 'ADMIN' ||
+    (role === 'SCHOOL_ADMIN' && canSchoolAdminAccess(adminLevel, 'update', 'school_settings'))
+  if (!canManagePayment) throw new Error('School administrator access is required.')
+  if (role !== 'SUPER_ADMIN' && actorSchoolId !== schoolId) {
+    throw new Error('You can only pay registration fees for your own school.')
+  }
+
+  const schoolRecord = await db.query.school.findFirst({ where: eq(school.id, schoolId) })
+  if (!schoolRecord) throw new Error('School not found.')
+  if (!['PENDING', 'FAILED'].includes(schoolRecord.paymentStatus.toUpperCase())) {
+    throw new Error('This school registration payment is not awaiting payment.')
+  }
+
+  const application = await db.query.schoolRegistrationApplication.findFirst({
+    where: eq(schoolRegistrationApplication.schoolId, schoolId),
+  })
+  const paymentReference = `SCH-PAY-${randomUUID().replaceAll('-', '').toUpperCase()}`
+  const now = new Date()
+  await db.transaction(async (tx) => {
+    const updatedSchool = await tx.update(school)
+      .set({ paymentReference, paymentStatus: 'PENDING', updatedAt: now })
+      .where(and(
+        eq(school.id, schoolId),
+        inArray(school.paymentStatus, ['PENDING', 'FAILED']),
+      ))
+      .returning({ id: school.id })
+    if (!updatedSchool.length) throw new Error('School payment status changed. Refresh and try again.')
+    if (schoolRecord.paymentReference) {
+      await tx.update(transactionLedger)
+        .set({ status: 'FAILED', updatedAt: now })
+        .where(and(
+          eq(transactionLedger.reference, schoolRecord.paymentReference),
+          eq(transactionLedger.status, 'PENDING'),
+        ))
+    }
+    await tx.insert(transactionLedger).values({
+      id: randomUUID(),
+      schoolId,
+      type: 'REGISTRATION_FEE',
+      direction: 'IN',
+      amount: '30161.25',
+      currency: 'NGN',
+      reference: paymentReference,
+      gateway: 'PAYSTACK',
+      status: 'PENDING',
+      description: 'School registration fee payment',
+      confirmationMethod: 'PAYSTACK_AUTO',
+      metadata: { paymentType: 'SCHOOL_REGISTRATION', schoolCode: schoolRecord.code },
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing()
+
+    if (application) {
+      const updatedApplication = await tx.update(schoolRegistrationApplication)
+        .set({ paymentReference, paymentStatus: 'PENDING', updatedAt: now })
+        .where(and(
+          eq(schoolRegistrationApplication.id, application.id),
+          inArray(schoolRegistrationApplication.paymentStatus, ['PENDING', 'FAILED']),
+        ))
+        .returning({ id: schoolRegistrationApplication.id })
+      if (!updatedApplication.length) throw new Error('School application payment status changed. Refresh and try again.')
+    }
+  })
+
+  try {
+    const siteUrl = process.env.NEXT_SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const checkout = await serviceInitializePaystackPayment({
+      schoolId,
+      reference: paymentReference,
+      amount: 30161.25,
+      currency: 'NGN',
+      feeType: 'SCHOOL_REGISTRATION',
+      description: `School registration fee for ${schoolRecord.name}`,
+      customerEmail: schoolRecord.adminEmail,
+      customerName: schoolRecord.adminName,
+      redirectUrl: `${siteUrl.replace(/\/$/, '')}/payment/return?reference=${encodeURIComponent(paymentReference)}`,
+      metadata: {
+        schoolId,
+        schoolCode: schoolRecord.code,
+        applicationId: application?.id,
+        paymentType: 'SCHOOL_REGISTRATION',
+      },
+    })
+    return { success: true, checkoutUrl: checkout.checkoutUrl, reference: checkout.reference }
+  } catch (error) {
+    await db.transaction(async (tx) => {
+      await tx.update(school)
+        .set({ paymentStatus: 'FAILED', updatedAt: new Date() })
+        .where(and(eq(school.id, schoolId), eq(school.paymentReference, paymentReference), eq(school.paymentStatus, 'PENDING')))
+      await tx.update(transactionLedger)
+        .set({ status: 'FAILED', updatedAt: new Date() })
+        .where(eq(transactionLedger.reference, paymentReference))
+      if (application) {
+        await tx.update(schoolRegistrationApplication)
+          .set({ paymentStatus: 'FAILED', updatedAt: new Date() })
+          .where(and(
+            eq(schoolRegistrationApplication.id, application.id),
+            eq(schoolRegistrationApplication.paymentReference, paymentReference),
+            eq(schoolRegistrationApplication.paymentStatus, 'PENDING'),
+          ))
+      }
+    })
+    throw error
   }
 }
 

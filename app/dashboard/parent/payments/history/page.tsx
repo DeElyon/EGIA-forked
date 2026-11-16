@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { getParentPaymentHistory } from '@/app/actions/payments'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
+import { downloadCsv } from '@/lib/download-csv'
 
 export default function PaymentHistoryPage() {
   const [payments, setPayments] = useState<any[]>([])
@@ -68,6 +69,19 @@ export default function PaymentHistoryPage() {
            (p.feeType || '').toLowerCase().includes(term) ||
            (p.transactionReference || '').toLowerCase().includes(term)
   })
+
+  const downloadHistory = () => downloadCsv('parent-payment-history.csv', [
+    ['Date', 'Reference', 'Student', 'Fee', 'Amount', 'Status', 'Payment Method'],
+    ...payments.map((p) => [
+      p.paidAt || p.paymentDate || p.createdAt,
+      p.transactionReference || p.id,
+      p.childName,
+      p.feeType,
+      p.amount,
+      p.status,
+      p.paymentMethod,
+    ]),
+  ])
 
   return (
     <DashboardLayout role="parent">
@@ -145,8 +159,8 @@ export default function PaymentHistoryPage() {
             <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Payment & Ward Registration History</h1>
             <p className="text-slate-500 font-medium">Track all your school fee payments and ward registration fees in real-time with Supabase Database.</p>
           </div>
-          <Button onClick={() => window.print()} className="bg-emerald-600 hover:bg-emerald-700 h-12 rounded-xl font-bold">
-            <Download className="w-4 h-4 mr-2" /> Export All (PDF)
+          <Button onClick={downloadHistory} className="bg-emerald-600 hover:bg-emerald-700 h-12 rounded-xl font-bold">
+            <Download className="w-4 h-4 mr-2" /> Download All (CSV)
           </Button>
         </div>
 

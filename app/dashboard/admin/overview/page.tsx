@@ -160,9 +160,11 @@ export default async function AdminOverviewPage() {
       {canViewFinance && (statsData.paymentStatus === 'PENDING' || statsData.paymentStatus === 'FAILED') && (
         <SchoolPaymentLockModal
           schoolName={statsData.schoolName}
+          adminEmail={statsData.adminEmail}
+          schoolId={statsData.schoolId}
           paymentStatus={statsData.paymentStatus}
           paymentReference={statsData.paymentReference}
-          adminEmail={statsData.adminEmail}
+          schoolCode={statsData.schoolCode}
         />
       )}
 
