@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Search, LifeBuoy, CheckCircle, Loader2 } from 'lucide-react'
-import { getAdminSupportTickets, resolveSupportTicket } from '@/app/actions/admin-ops'
+import { getAdminSupportTickets, replyToSchoolSupportTicket } from '@/app/actions/admin-ops'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { toast } from 'sonner'
 
@@ -46,8 +46,8 @@ export default function AdminSupportDashboard() {
     }
     setSubmitting(true)
     try {
-      await resolveSupportTicket(selectedTicket.id, resolutionText)
-      toast.success('Support ticket resolved!')
+      await replyToSchoolSupportTicket(selectedTicket.id, resolutionText)
+      toast.success('School support reply sent!')
       setSelectedTicket(null)
       setResolutionText('')
       fetchTickets()
@@ -83,6 +83,7 @@ export default function AdminSupportDashboard() {
                    <p className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Open Tickets</p>
                 </div>
              </div>
+             <a href="/dashboard/admin/communication/support/contact-super-admin" className="rounded-2xl bg-violet-700 px-5 py-4 text-xs font-black text-white shadow-lg">CONTACT SUPER ADMIN</a>
           </div>
         </div>
 
@@ -176,9 +177,9 @@ export default function AdminSupportDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-4 pt-4 border-t border-slate-100">
-                    <p className="text-xs font-black uppercase text-slate-700">Resolve & Respond to User</p>
+                    <p className="text-xs font-black uppercase text-slate-700">Respond to School Support</p>
                     <textarea
-                      placeholder="Input resolution instructions or response for the user..."
+                      placeholder="Write a helpful response for the user..."
                       value={resolutionText}
                       onChange={e => setResolutionText(e.target.value)}
                       className="w-full min-h-[100px] p-4 rounded-2xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -189,7 +190,7 @@ export default function AdminSupportDashboard() {
                       className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs gap-2"
                     >
                       {submitting ? <Loader2 className="animate-spin w-4 h-4" /> : <CheckCircle size={16} />}
-                      RESOLVE SUPPORT TICKET
+                      SEND SCHOOL RESPONSE
                     </Button>
                   </div>
                 )}
