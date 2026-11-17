@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { academicSession, parent, school, schoolCalendarEvent, student, term, user } from '@/lib/db/schema'
+import { academicSession, parent, school, schoolCalendarEvent, student, term } from '@/lib/db/schema'
 import { and, asc, eq, gte, lte } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'

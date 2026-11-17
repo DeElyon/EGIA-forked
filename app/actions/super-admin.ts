@@ -525,7 +525,7 @@ export async function getSuperAdminSupportTicketsAction() {
   try {
     await checkSuperAdminPermission()
 
-    const { supportTicket, supportTicketReply } = await import('@/lib/db/schema')
+    const { supportTicketReply } = await import('@/lib/db/schema')
     const tickets = await db.query.supportTicket.findMany({
       orderBy: (ticket, { desc }) => [desc(ticket.createdAt)],
     })

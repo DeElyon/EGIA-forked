@@ -170,6 +170,11 @@ export default function AdminSupportDashboard() {
                   <p className="text-sm font-semibold text-slate-800">{selectedTicket.description}</p>
                 </div>
 
+                {selectedTicket.replies?.length > 0 && <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase text-slate-400">Conversation</p>
+                  {selectedTicket.replies.map((reply: any) => <div key={reply.id} className="rounded-xl bg-slate-50 p-3 text-sm"><p className="font-semibold text-slate-700">{reply.message}</p><time className="text-[10px] text-slate-400">{new Date(reply.createdAt).toLocaleString()}</time></div>)}
+                </div>}
+
                 {selectedTicket.status === 'RESOLVED' ? (
                   <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-1">
                     <p className="text-[10px] font-black uppercase text-emerald-700">Resolution Remarks</p>

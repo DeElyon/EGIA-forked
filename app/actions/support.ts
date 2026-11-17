@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { dispute, disputeMessage, parent, payment, student, supportTicket, supportTicketReply, user, userRole } from '@/lib/db/schema'
+import { dispute, disputeMessage, parent, payment, student, supportTicket, supportTicketReply, user } from '@/lib/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
